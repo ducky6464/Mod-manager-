@@ -35,3 +35,12 @@ A client-side Fabric mod for Minecraft **1.21.11**.
 This manager can rebind keybindings registered with Minecraft's standard `KeyBinding` registry. It lists all Fabric Loader mods, but it cannot universally discover or change a private hack-client menu key if that client uses its own unregistered key system. That requires a client-specific adapter or inspection of the client's JAR/config format.
 
 The automated build must pass before the JAR is treated as ready. A successful build does not replace testing in the user's actual Minecraft instance and client.
+
+
+## Version 7 rendering
+
+- Mod entries are rendered as standard Minecraft ButtonWidget rows rather than manually painted text.
+- The list is paginated and uses the same widget rendering path as the working action controls.
+- Fabric mod discovery handles individual metadata failures without discarding the whole list.
+- If full enumeration fails, the manager attempts a direct lookup of its own Fabric container so the screen can still show a visible row and report the state.
+- CI runs a clean build, verifies the exact v7 JAR filename and embedded fabric.mod.json name, and uploads only that JAR.
