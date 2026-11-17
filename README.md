@@ -4,7 +4,8 @@ A lightweight client-side Fabric mod for Minecraft **1.21.11**.
 
 ## Controls
 
-- Open the manager with **Right Shift**.
+- Open the manager with **Right Control** by default.
+- Change the menu key in **Options → Controls → Key Binds**.
 - Click a keybind row, then press the key you want to assign.
 - Press **Escape** while assigning to cancel.
 - Use **Restore default** to restore the selected binding.
@@ -25,7 +26,7 @@ A lightweight client-side Fabric mod for Minecraft **1.21.11**.
 1. Install Fabric Loader for Minecraft 1.21.11.
 2. Install Fabric API for Minecraft 1.21.11.
 3. Put the Mod Manager JAR in your Minecraft `mods` folder.
-4. Launch the Fabric profile and press **Right Shift** in-game.
+4. Launch the Fabric profile and press **Right Control** in-game.
 
 ## Build
 
@@ -43,4 +44,4 @@ This mod manages **normal Minecraft-registered keybindings**. It cannot automati
 
 The manager's own list is compact and scrollable. It does **not** resize the internal GUI of every third-party client. That requires a separate adapter or supported scaling hook for each client, and must be tested against those clients individually.
 
-The automated build has passed. Runtime behavior still needs testing in a real Minecraft 1.21.11 instance with the user's specific mod/client collection.
+The automated build must pass before a release is considered ready. Runtime behavior still needs testing in a real Minecraft 1.21.11 instance with the user's specific mod/client collection.
