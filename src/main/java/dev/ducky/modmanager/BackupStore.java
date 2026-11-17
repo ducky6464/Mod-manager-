@@ -6,8 +6,6 @@ import net.minecraft.client.MinecraftClient;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
 /**
@@ -53,11 +51,8 @@ public final class BackupStore {
                 }
             }
 
-            Path dated = BACKUP_ROOT.resolve("backup-" +
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
             deleteTree(latest);
             move(staging, latest);
-            copyDirectory(latest, dated);
             return true;
         } catch (IOException | RuntimeException error) {
             System.err.println("[Mod Manager] Force Save failed: " + error);
