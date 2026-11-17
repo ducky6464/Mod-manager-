@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "modmanager",
   "version": "${version}",
-  "name": "Mod Manager v5",
+  "name": "Mod Manager v6",
   "description": "Lists installed Fabric mods, manages registered Minecraft keybinds, and backs up supported settings.",
   "authors": ["ducky6464"],
   "license": "MIT",
