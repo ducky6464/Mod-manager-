@@ -4,6 +4,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import java.io.*;
+import java.lang.reflect.*;
 import java.nio.file.*;
 import java.util.*;
 
@@ -11,6 +12,8 @@ public final class KeybindStore {
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("mod-manager.properties");
     private static final Map<String,Integer> SAVED = new LinkedHashMap<>();
     private static final Map<String,Integer> ORIGINAL = new LinkedHashMap<>();
+    private static Field boundKeyField;
+    private static Method updateMethod;
     private static boolean loaded;
     private KeybindStore() {}
     public static synchronized void load() {
@@ -22,27 +25,38 @@ public final class KeybindStore {
             if (n.startsWith("key.")) SAVED.put(n.substring(4), Integer.parseInt(p.getProperty(n)));
             if (n.startsWith("default.")) ORIGINAL.put(n.substring(8), Integer.parseInt(p.getProperty(n)));
         } catch (NumberFormatException ignored) {}
+        try {
+            boundKeyField=KeyBinding.class.getDeclaredField("boundKey"); boundKeyField.setAccessible(true);
+            updateMethod=KeyBinding.class.getDeclaredMethod("updateKeysByCode"); updateMethod.setAccessible(true);
+        } catch (ReflectiveOperationException e) { System.err.println("[Mod Manager] Could not access keybind internals: "+e.getMessage()); }
+    }
+    public static synchronized int boundCode(KeyBinding b) {
+        try { return ((InputUtil.Key)boundKeyField.get(b)).getCode(); }
+        catch (ReflectiveOperationException|NullPointerException e) { return -1; }
+    }
+    private static void refreshIndex() {
+        try { if(updateMethod!=null) updateMethod.invoke(null); }
+        catch (ReflectiveOperationException e) { System.err.println("[Mod Manager] Key index refresh failed: "+e.getMessage()); }
     }
     public static synchronized void remember(KeyBinding b) {
-        String id=b.getTranslationKey();
+        String id=b.getId();
         ORIGINAL.putIfAbsent(id,b.getDefaultKey().getCode());
-        SAVED.putIfAbsent(id,b.getBoundKey().getCode());
+        SAVED.putIfAbsent(id,boundCode(b));
     }
-    public static synchronized Integer saved(String id) { return SAVED.get(id); }
     public static synchronized void set(KeyBinding b,int code) {
-        remember(b); SAVED.put(b.getTranslationKey(),code);
-        b.setBoundKey(InputUtil.fromKeyCode(code,0)); KeyBinding.updateKeysByCode(); save();
+        remember(b); SAVED.put(b.getId(),code);
+        b.setBoundKey(InputUtil.fromKeyCode(code,0)); refreshIndex(); save();
     }
     public static synchronized void restore(KeyBinding b) {
-        Integer v=ORIGINAL.get(b.getTranslationKey()); if(v!=null) set(b,v);
+        Integer v=ORIGINAL.get(b.getId()); if(v!=null) set(b,v);
     }
     public static synchronized void reapplySavedBindings() {
         boolean changed=false;
         for(KeyBinding b:KeybindScanner.getBindings()) {
-            Integer code=SAVED.get(b.getTranslationKey());
-            if(code!=null && b.getBoundKey().getCode()!=code) { b.setBoundKey(InputUtil.fromKeyCode(code,0)); changed=true; }
+            Integer code=SAVED.get(b.getId());
+            if(code!=null && boundCode(b)!=code) { b.setBoundKey(InputUtil.fromKeyCode(code,0)); changed=true; }
         }
-        if(changed) KeyBinding.updateKeysByCode();
+        if(changed) refreshIndex();
     }
     public static synchronized void save() {
         Properties p=new Properties();
