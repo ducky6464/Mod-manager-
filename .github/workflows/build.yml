@@ -1,4 +1,4 @@
-name: Build Mod Manager
+name: Build Mod Manager v3
 on:
   push:
     branches: [main]
@@ -24,5 +24,5 @@ jobs:
       - name: Upload mod JAR
         uses: actions/upload-artifact@v4
         with:
-          name: mod-manager-v2-1.21.11
+          name: mod-manager-v3-1.21.11
           path: build/libs/*.jar
