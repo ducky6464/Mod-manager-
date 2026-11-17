@@ -32,7 +32,9 @@ public final class KeybindManagerScreen extends Screen {
             c.fill(8,y,width-8,y+ROW-2,i==selected?0xB0506080:0x80303030);
             String label=k.getId();if(label.length()>45)label=label.substring(0,42)+"...";
             c.drawTextWithShadow(textRenderer,label,14,y+6,0xFFFFFF);
-            c.drawTextWithShadow(textRenderer,k.getBoundKeyLocalizedText(),Math.max(150,width-120),y+6,0xFFFF80);
+            c.drawTextWithShadow(textRenderer,"Now: "+k.getBoundKeyLocalizedText().getString(),Math.max(150,width-190),y+6,0xFFFF80);
+            c.drawTextWithShadow(textRenderer,"Default: "+k.getDefaultKey().getLocalizedText().getString(),Math.max(150,width-95),y+6,0xA0A0A0);
+            if(hasConflict(k)) c.drawTextWithShadow(textRenderer,"!",width-18,y+6,0xFF5555);
         }
         if(waiting){c.fill(width/2-115,height/2-18,width/2+115,height/2+18,0xE0202020);c.drawCenteredTextWithShadow(textRenderer,"Press a key (ESC cancels)",width/2,height/2-4,0xFFFFFF);}
         super.render(c,mx,my,delta);
@@ -48,6 +50,12 @@ public final class KeybindManagerScreen extends Screen {
     @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical){
         int visible=Math.max(1,(height-86)/ROW),max=Math.max(0,bindings.size()-visible);
         scroll=Math.max(0,Math.min(max,scroll-(int)Math.signum(vertical)*3));return true;
+    }
+    private boolean hasConflict(KeyBinding target){
+        int code=KeybindStore.boundCode(target);
+        if(code<0)return false;
+        for(KeyBinding other:bindings)if(other!=target&&KeybindStore.boundCode(other)==code)return true;
+        return false;
     }
     private void restore(){if(selected>=0&&selected<bindings.size())KeybindStore.restore(bindings.get(selected));}
     @Override public void close(){if(waiting){waiting=false;return;}if(client!=null)client.setScreen(parent);}
