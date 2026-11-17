@@ -1,7 +1,7 @@
-name: Build Mod Manager v5
+name: Build Mod Manager v6
 on:
   push:
-    branches: [main, 'fix/v5-visible-diagnostics']
+    branches: [main, 'fix/v5-visible-diagnostics', 'fix/v6-visible-empty-state']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -24,5 +24,5 @@ jobs:
       - name: Upload mod JAR
         uses: actions/upload-artifact@v4
         with:
-          name: mod-manager-v5-1.21.11
+          name: mod-manager-v6-1.21.11
           path: build/libs/*.jar
