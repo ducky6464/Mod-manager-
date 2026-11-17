@@ -44,9 +44,13 @@ public final class KeybindScanner {
                 }
             }
             lastKeybindCount = FOUND.size();
-            lastScanStatus = "OK: mods=" + lastModCount + ", keybinds=" + lastKeybindCount
+            lastScanStatus = (lastScanError.equals("None") ? "OK" : "PARTIAL")
+                + ": mods=" + lastModCount + ", keybinds=" + lastKeybindCount
                 + ", registryFields=" + inspectedFields;
             System.err.println("[Mod Manager] SCAN " + lastScanStatus);
+            if (!lastScanError.equals("None")) {
+                System.err.println("[Mod Manager] SCAN DETAILS: " + lastScanError);
+            }
         } catch (Throwable error) {
             lastScanStatus = "FAILED";
             lastScanError = describe(error);
