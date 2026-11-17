@@ -24,6 +24,7 @@ public final class KeybindScanner {
             lastModCount = mods.size();
             Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
             int inspectedFields = 0;
+
             for (Field field : KeyBinding.class.getDeclaredFields()) {
                 if (!Modifier.isStatic(field.getModifiers())) continue;
                 Class<?> type = field.getType();
@@ -36,6 +37,7 @@ public final class KeybindScanner {
                     reportError("KeyBinding registry field " + field.getName(), error);
                 }
             }
+
             for (KeyBinding binding : FOUND.values()) {
                 try {
                     KeybindStore.remember(binding);
@@ -43,19 +45,20 @@ public final class KeybindScanner {
                     reportError("Remember keybind " + binding.getId(), error);
                 }
             }
+
             lastKeybindCount = FOUND.size();
             lastScanStatus = (lastScanError.equals("None") ? "OK" : "PARTIAL")
                 + ": mods=" + lastModCount + ", keybinds=" + lastKeybindCount
                 + ", registryFields=" + inspectedFields;
-            System.err.println("[Mod Manager] SCAN " + lastScanStatus);
+            System.err.println("[Mod Manager] V7 SCAN " + lastScanStatus);
             if (!lastScanError.equals("None")) {
-                System.err.println("[Mod Manager] SCAN DETAILS: " + lastScanError);
+                System.err.println("[Mod Manager] V7 SCAN DETAILS: " + lastScanError);
             }
         } catch (Throwable error) {
             lastScanStatus = "FAILED";
             lastScanError = describe(error);
             lastKeybindCount = FOUND.size();
-            System.err.println("[Mod Manager] SCAN FAILED: " + lastScanError);
+            System.err.println("[Mod Manager] V7 SCAN FAILED: " + lastScanError);
             error.printStackTrace(System.err);
         }
     }
@@ -94,11 +97,42 @@ public final class KeybindScanner {
         return result;
     }
 
+    private static String safeModId(ModContainer mod) {
+        try {
+            String id = mod.getMetadata().getId();
+            return id == null || id.isBlank() ? "unknown-mod" : id;
+        } catch (Throwable error) {
+            return "unknown-mod";
+        }
+    }
+
+    private static String safeModName(ModContainer mod) {
+        try {
+            String name = mod.getMetadata().getName();
+            return name == null || name.isBlank() ? safeModId(mod) : name;
+        } catch (Throwable error) {
+            return safeModId(mod);
+        }
+    }
+
     public static List<ModContainer> getInstalledMods() {
         try {
-            List<ModContainer> mods = new ArrayList<>(FabricLoader.getInstance().getAllMods());
-            mods.sort(Comparator.comparing(m -> m.getMetadata().getName(), String.CASE_INSENSITIVE_ORDER));
+            FabricLoader loader = FabricLoader.getInstance();
+            List<ModContainer> mods = new ArrayList<>(loader.getAllMods());
+
+            // Keep the manager visible even if a custom loader returns an incomplete mod collection.
+            if (mods.stream().noneMatch(mod -> "modmanager".equals(safeModId(mod)))) {
+                loader.getModContainer("modmanager").ifPresent(mods::add);
+            }
+
+            mods.sort(Comparator.comparing(KeybindScanner::safeModName, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(KeybindScanner::safeModId, String.CASE_INSENSITIVE_ORDER));
             lastModCount = mods.size();
+            if (mods.isEmpty()) {
+                lastScanStatus = "EMPTY: Fabric Loader returned no mod containers";
+                lastScanError = "FabricLoader.getAllMods() returned an empty list";
+                System.err.println("[Mod Manager] V7 EMPTY MOD LIST");
+            }
             return mods;
         } catch (Throwable error) {
             lastScanError = "Fabric Loader mod list: " + describe(error);
@@ -119,8 +153,10 @@ public final class KeybindScanner {
         String remainder = keyId.substring(4);
         String match = null;
         for (ModContainer mod : getInstalledMods()) {
-            String id = mod.getMetadata().getId();
-            if (remainder.startsWith(id + ".") && (match == null || id.length() > match.length())) match = id;
+            String id = safeModId(mod);
+            if (remainder.startsWith(id + ".") && (match == null || id.length() > match.length())) {
+                match = id;
+            }
         }
         return match;
     }
