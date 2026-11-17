@@ -1,4 +1,4 @@
-# Mod Manager
+# Mod Manager v3
 
 A lightweight client-side Fabric mod for Minecraft **1.21.11**.
 
@@ -25,7 +25,7 @@ A lightweight client-side Fabric mod for Minecraft **1.21.11**.
 
 1. Install Fabric Loader for Minecraft 1.21.11.
 2. Install Fabric API for Minecraft 1.21.11.
-3. Put the Mod Manager JAR in your Minecraft `mods` folder.
+3. Put the Mod Manager v3 JAR in your Minecraft `mods` folder.
 4. Launch the Fabric profile and press **Right Control** in-game.
 
 ## Build
