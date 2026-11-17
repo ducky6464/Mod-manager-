@@ -2,6 +2,10 @@
 
 A client-side Fabric mod for Minecraft **1.21.11**.
 
+## Current implementation
+
+- Registry scanning now handles nested collections and isolates reflection failures per field.
+
 ## Current prototype
 
 - Opens the manager with **Right Shift**.
