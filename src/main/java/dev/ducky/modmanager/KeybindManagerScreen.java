@@ -16,6 +16,7 @@ public final class KeybindManagerScreen extends Screen {
     private List<KeyBinding> bindings;
     private int scroll,selected=-1;
     private boolean waiting;
+    private String saveMessage = "";
     private static final int ROW=30;
     public KeybindManagerScreen(Screen parent){super(Text.literal("Mod Manager"));this.parent=parent;}
     @Override protected void init(){
@@ -24,17 +25,22 @@ public final class KeybindManagerScreen extends Screen {
         selected=-1;
         for(int i=0;i<bindings.size();i++) if(bindings.get(i).getId().equals(remembered)){selected=i;break;}
         if(selected>=0) scroll=Math.max(0,selected-Math.max(1,(height-86)/ROW)+1);
-        int y=height-27;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"),b->restore()).dimensions(8,y,110,20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"),b->{KeybindScanner.scan();bindings=KeybindScanner.getBindings();scroll=0;}).dimensions(124,y,75,20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Done"),b->close()).dimensions(width-78,y,70,20).build());
+        int topY=height-50, bottomY=height-27;
+        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"),b->restore()).dimensions(8,topY,110,20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"),b->{
+            boolean saved=BackupStore.forceSave(client);
+            saveMessage=saved?"Settings backup saved.":"Save failed. Check latest.log.";
+        }).dimensions(124,topY,120,20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"),b->{KeybindScanner.scan();bindings=KeybindScanner.getBindings();scroll=0;}).dimensions(8,bottomY,75,20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Done"),b->close()).dimensions(width-78,bottomY,70,20).build());
     }
     @Override public void render(DrawContext c,int mx,int my,float delta){
         renderBackground(c,mx,my,delta);
         c.drawCenteredTextWithShadow(textRenderer,title,width/2,8,0xFFFFFF);
         c.drawTextWithShadow(textRenderer,"Found registered keybinds: "+bindings.size(),10,22,0xAAAAAA);
         c.drawTextWithShadow(textRenderer,"Select a row, then press a key. Scroll to see more.",10,34,0xAAAAAA);
-        int top=50,visible=Math.max(1,(height-86)/ROW);
+        if(!saveMessage.isEmpty()) c.drawTextWithShadow(textRenderer,saveMessage,10,45,0x80FF80);
+        int top=60,visible=Math.max(1,(height-96)/ROW);
         for(int i=scroll;i<Math.min(bindings.size(),scroll+visible);i++){
             KeyBinding k=bindings.get(i);int y=top+(i-scroll)*ROW;
             c.fill(8,y,width-8,y+ROW-2,i==selected?0xB0506080:0x80303030);
@@ -53,7 +59,7 @@ public final class KeybindManagerScreen extends Screen {
     }
     @Override public boolean mouseClicked(Click click, boolean doubled){
         double x=click.x(), y=click.y();
-        if(y>=50&&y<height-32&&x>=8&&x<width-8){int row=(int)((y-50)/ROW)+scroll;if(row>=0&&row<bindings.size()){selected=row;KeybindStore.setSelectedId(bindings.get(row).getId());waiting=true;return true;}}
+        if(y>=60&&y<height-55&&x>=8&&x<width-8){int row=(int)((y-60)/ROW)+scroll;if(row>=0&&row<bindings.size()){selected=row;KeybindStore.setSelectedId(bindings.get(row).getId());waiting=true;return true;}}
         return super.mouseClicked(click,doubled);
     }
     @Override public boolean keyPressed(KeyInput input){
@@ -62,7 +68,7 @@ public final class KeybindManagerScreen extends Screen {
         if(key==GLFW.GLFW_KEY_ESCAPE){close();return true;}return super.keyPressed(input);
     }
     @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical){
-        int visible=Math.max(1,(height-86)/ROW),max=Math.max(0,bindings.size()-visible);
+        int visible=Math.max(1,(height-96)/ROW),max=Math.max(0,bindings.size()-visible);
         scroll=Math.max(0,Math.min(max,scroll-(int)Math.signum(vertical)*3));return true;
     }
     private boolean hasConflict(KeyBinding target){
