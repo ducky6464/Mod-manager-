@@ -21,10 +21,10 @@ public final class KeybindScanner {
         } catch(ReflectiveOperationException|RuntimeException e){System.err.println("[Mod Manager] Scan warning: "+e.getMessage());}
         for(KeyBinding b:FOUND.values()) KeybindStore.remember(b);
     }
-    private static void collect(Object o){if(o instanceof KeyBinding b) FOUND.put(b.getTranslationKey(),b);}
+    private static void collect(Object o){if(o instanceof KeyBinding b) FOUND.put(b.getId(),b);}
     public static synchronized void scanIfNeeded(){ if (--ticksUntilScan <= 0) { ticksUntilScan = 40; scan(); } }
     public static synchronized List<KeyBinding> getBindings(){
         List<KeyBinding> out=new ArrayList<>(FOUND.values());
-        out.sort(Comparator.comparing(KeyBinding::getTranslationKey,String.CASE_INSENSITIVE_ORDER)); return out;
+        out.sort(Comparator.comparing(KeyBinding::getId,String.CASE_INSENSITIVE_ORDER)); return out;
     }
 }
