@@ -1,12 +1,10 @@
 package dev.ducky.modmanager;
 
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.option.KeyBinding;
-import net.fabricmc.loader.api.ModContainer;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
@@ -15,15 +13,18 @@ import java.util.*;
 public final class KeybindManagerScreen extends Screen {
     private final Screen parent;
     private final List<Row> rows = new ArrayList<>();
-    private int scroll, selected = -1;
+    private int selected = -1;
+    private int page = 0;
+    private int rowsPerPage = 1;
     private boolean waiting;
-    private String saveMessage = "";
-    private String listStatus = "Waiting for scan";
-    private static final int ROW = 38;
-    private record Row(String modId, String modName, String version, KeyBinding binding, boolean firstForMod) {}
+    private String saveMessage = "Select a mod row. Rows are real Minecraft widgets.";
+    private ButtonWidget infoWidget;
+    private ButtonWidget messageWidget;
+
+    private record Row(String modId, String modName, String version, KeyBinding binding) {}
 
     public KeybindManagerScreen(Screen parent) {
-        super(Text.literal("Mod Manager v6"));
+        super(Text.literal("Mod Manager v7"));
         this.parent = parent;
     }
 
@@ -31,198 +32,267 @@ public final class KeybindManagerScreen extends Screen {
     protected void init() {
         KeybindScanner.scan();
         rebuildRows();
-        int buttonY = height - 76;
-        int buttonY2 = height - 50;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"), b -> restore())
-            .dimensions(8, buttonY, 104, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save Selected"), b -> forceSaveSelected())
-            .dimensions(116, buttonY, Math.max(110, width - 124), 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"), b -> forceSaveAll())
+
+        int fullWidth = Math.max(120, width - 16);
+        infoWidget = addDrawableChild(ButtonWidget.builder(
+            Text.literal("MOD MANAGER v7 | Fabric mods: " + KeybindScanner.getLastModCount()
+                + " | keybinds: " + KeybindScanner.getLastKeybindCount()),
+            button -> {}
+        ).dimensions(8, 8, fullWidth, 22).build());
+        infoWidget.active = false;
+
+        messageWidget = addDrawableChild(ButtonWidget.builder(
+            Text.literal(trim(saveMessage, fullWidth - 16)),
+            button -> {}
+        ).dimensions(8, 34, fullWidth, 20).build());
+        messageWidget.active = false;
+
+        int listTop = 60;
+        int pageControlsY = height - 108;
+        rowsPerPage = Math.max(1, Math.min(10, (pageControlsY - listTop - 4) / 31));
+        int pageCount = Math.max(1, (rows.size() + rowsPerPage - 1) / rowsPerPage);
+        page = Math.max(0, Math.min(page, pageCount - 1));
+
+        if (rows.isEmpty()) {
+            String empty = KeybindScanner.getLastModCount() == 0
+                ? "NO MODS RETURNED BY FABRIC LOADER"
+                : "NO MOD ROWS. SCAN: " + KeybindScanner.getLastScanStatus();
+            ButtonWidget emptyRow = addDrawableChild(ButtonWidget.builder(
+                Text.literal(trim(empty, fullWidth - 20)), button -> {}
+            ).dimensions(8, listTop, fullWidth, 28).build());
+            emptyRow.active = false;
+        } else {
+            int start = page * rowsPerPage;
+            int end = Math.min(rows.size(), start + rowsPerPage);
+            for (int index = start; index < end; index++) {
+                final int rowIndex = index;
+                Row row = rows.get(index);
+                String label = row.modName() + " [" + row.modId() + "] " + row.version();
+                if (row.binding() == null) {
+                    label += " | No registered keybind";
+                } else {
+                    label += " | " + row.binding().getId() + " = "
+                        + row.binding().getBoundKeyLocalizedText().getString();
+                }
+                if (selected == index) label = "> " + label;
+                ButtonWidget rowButton = addDrawableChild(ButtonWidget.builder(
+                    Text.literal(trim(label, fullWidth - 22)),
+                    button -> selectRow(rowIndex)
+                ).dimensions(8, listTop + (index - start) * 31, fullWidth, 28).build());
+                rowButton.active = true;
+            }
+        }
+
+        ButtonWidget previous = addDrawableChild(ButtonWidget.builder(Text.literal("Previous"), button -> {
+            if (page > 0) {
+                page--;
+                clearAndInit();
+            }
+        }).dimensions(8, pageControlsY, 88, 20).build());
+        previous.active = page > 0;
+
+        ButtonWidget pageLabel = addDrawableChild(ButtonWidget.builder(
+            Text.literal("Page " + (page + 1) + " / " + pageCount + " | Rows: " + rows.size()),
+            button -> {}
+        ).dimensions(102, pageControlsY, Math.max(90, width - 212), 20).build());
+        pageLabel.active = false;
+
+        ButtonWidget next = addDrawableChild(ButtonWidget.builder(Text.literal("Next"), button -> {
+            if (page + 1 < pageCount) {
+                page++;
+                clearAndInit();
+            }
+        }).dimensions(width - 96, pageControlsY, 88, 20).build());
+        next.active = page + 1 < pageCount;
+
+        int buttonY = height - 78;
+        int buttonY2 = height - 52;
+        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"), button -> restore())
+            .dimensions(8, buttonY, 112, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save Selected"), button -> forceSaveSelected())
+            .dimensions(124, buttonY, Math.max(110, width - 132), 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"), button -> forceSaveAll())
             .dimensions(8, buttonY2, 112, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"), b -> {
-            KeybindScanner.scan();
-            rebuildRows();
-            scroll = 0;
-            saveMessage = "Rescan: " + KeybindScanner.getLastScanStatus();
+        addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"), button -> {
+            selected = -1;
+            page = 0;
+            saveMessage = "Rescanning installed Fabric mods and registered keybinds...";
+            clearAndInit();
         }).dimensions(124, buttonY2, 82, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> close())
+        addDrawableChild(ButtonWidget.builder(Text.literal("Done"), button -> close())
             .dimensions(width - 78, buttonY2, 70, 20).build());
     }
 
     private void rebuildRows() {
         rows.clear();
         try {
-        List<ModContainer> installedMods = KeybindScanner.getInstalledMods();
-        List<KeyBinding> bindings = KeybindScanner.getBindings();
-        Map<String, List<KeyBinding>> byMod = new HashMap<>();
-        List<KeyBinding> unassigned = new ArrayList<>();
-        for (KeyBinding binding : bindings) {
-            String owner = KeybindScanner.findOwnerModId(binding.getId());
-            if (owner == null) unassigned.add(binding);
-            else byMod.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(binding);
-        }
+            List<KeyBinding> bindings = KeybindScanner.getBindings();
+            Map<String, List<KeyBinding>> byMod = new HashMap<>();
+            List<KeyBinding> unassigned = new ArrayList<>();
 
-        for (ModContainer mod : installedMods) {
-            String id = mod.getMetadata().getId();
-            String name = mod.getMetadata().getName();
-            String version = mod.getMetadata().getVersion().getFriendlyString();
-            List<KeyBinding> owned = byMod.getOrDefault(id, List.of());
-            if (owned.isEmpty()) rows.add(new Row(id, name, version, null, true));
-            else {
-                boolean first = true;
-                for (KeyBinding binding : owned) {
-                    rows.add(new Row(id, name, version, binding, first));
-                    first = false;
+            for (KeyBinding binding : bindings) {
+                String owner = KeybindScanner.findOwnerModId(binding.getId());
+                if (owner == null) unassigned.add(binding);
+                else byMod.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(binding);
+            }
+
+            for (var mod : KeybindScanner.getInstalledMods()) {
+                String id;
+                String name;
+                String version;
+                try {
+                    id = mod.getMetadata().getId();
+                } catch (Throwable error) {
+                    System.err.println("[Mod Manager] Could not read a mod ID: " + error);
+                    continue;
+                }
+                try {
+                    name = mod.getMetadata().getName();
+                } catch (Throwable error) {
+                    name = id;
+                    System.err.println("[Mod Manager] Could not read display name for " + id + ": " + error);
+                }
+                try {
+                    version = mod.getMetadata().getVersion().getFriendlyString();
+                } catch (Throwable error) {
+                    version = "version unavailable";
+                    System.err.println("[Mod Manager] Could not read version for " + id + ": " + error);
+                }
+
+                List<KeyBinding> owned = byMod.getOrDefault(id, List.of());
+                if (owned.isEmpty()) {
+                    rows.add(new Row(id, name, version, null));
+                } else {
+                    for (KeyBinding binding : owned) rows.add(new Row(id, name, version, binding));
                 }
             }
-        }
-        if (!unassigned.isEmpty()) {
-            boolean first = true;
+
             for (KeyBinding binding : unassigned) {
-                rows.add(new Row("minecraft/unassigned", "Minecraft / Unassigned", "", binding, first));
-                first = false;
+                rows.add(new Row("minecraft/unassigned", "Minecraft / Unassigned", "", binding));
             }
-        }
-        if (selected >= rows.size()) selected = -1;
-        listStatus = "Rows displayed: " + rows.size() + " | Fabric mods: " + installedMods.size() + " | keybinds: " + bindings.size();
-        System.err.println("[Mod Manager] UI " + listStatus);
+
+            System.err.println("[Mod Manager] V7 UI rows=" + rows.size()
+                + " FabricMods=" + KeybindScanner.getLastModCount()
+                + " Keybinds=" + KeybindScanner.getLastKeybindCount());
         } catch (Throwable error) {
             rows.clear();
-            selected = -1;
-            listStatus = "LIST BUILD FAILED: " + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage());
-            System.err.println("[Mod Manager] " + listStatus);
+            System.err.println("[Mod Manager] V7 row build failed: " + error);
             error.printStackTrace(System.err);
+            saveMessage = "ROW BUILD FAILED: " + error.getClass().getSimpleName()
+                + ": " + String.valueOf(error.getMessage());
         }
     }
 
-    @Override
-    public void render(DrawContext c, int mx, int my, float delta) {
-        c.fill(0, 0, width, height, 0xA0101010);
-        c.drawCenteredTextWithShadow(textRenderer, title, width / 2, 5, 0xFFFFFF);
-        c.drawTextWithShadow(textRenderer, "Fabric mods found: " + KeybindScanner.getLastModCount()
-            + "   |   Registered keybinds: " + KeybindScanner.getLastKeybindCount(), 10, 19, 0xFFFFFF);
-        c.drawTextWithShadow(textRenderer, "Scan: " + KeybindScanner.getLastScanStatus(), 10, 31, 0x80FF80);
-        String scanError = KeybindScanner.getLastScanError();
-        if (!"None".equals(scanError)) {
-            c.drawTextWithShadow(textRenderer, "ERROR: " + textRenderer.trimToWidth(scanError, width - 62), 10, 43, 0xFF7070);
-        }
-        c.drawTextWithShadow(textRenderer, "Select a keybind row, then press a key to rebind it.", 10, 55, 0xAAAAAA);
-        c.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(listStatus, width - 20), 10, 67, 0xFFFFFF);
-        if (!saveMessage.isEmpty()) c.drawTextWithShadow(textRenderer,
-            textRenderer.trimToWidth(saveMessage, width - 20), 10, 79, 0x80FF80);
-
-        int top = 96;
-        int bottom = height - 82;
-        int visible = Math.max(1, (bottom - top) / ROW);
-        if (rows.isEmpty()) {
-            String emptyMessage = KeybindScanner.getLastModCount() == 0
-                ? "Fabric Loader returned zero installed mods."
-                : "No mod rows were built. Check scan status and latest.log.";
-            c.drawCenteredTextWithShadow(textRenderer, emptyMessage, width / 2, top + 24, 0xFFFF7070);
-        }
-        for (int i = scroll; i < Math.min(rows.size(), scroll + visible); i++) {
-            Row row = rows.get(i);
-            int y = top + (i - scroll) * ROW;
-            c.fill(8, y, width - 8, y + ROW - 2, i == selected ? 0xB0506080 : 0x80303030);
-            String heading = row.firstForMod()
-                ? row.modName() + "  (" + row.modId() + ")  " + row.version()
-                : "  " + row.modName() + "  (" + row.modId() + ")";
-            c.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(heading, width - 28), 14, y + 3, 0xFFFFFF);
-            String detail;
-            if (row.binding() == null) detail = "No registered keybind";
-            else {
-                KeyBinding key = row.binding();
-                detail = key.getId() + "  |  Now: " + key.getBoundKeyLocalizedText().getString()
-                    + "  |  Default: " + key.getDefaultKey().getLocalizedText().getString();
-                if (hasConflict(key)) detail += "  [CONFLICT]";
-            }
-            c.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(detail, width - 28),
-                14, y + 19, row.binding() == null ? 0xAAAAAA : 0xFFFF80);
-        }
-        if (waiting) {
-            c.fill(width / 2 - 115, height / 2 - 18, width / 2 + 115, height / 2 + 18, 0xE0202020);
-            c.drawCenteredTextWithShadow(textRenderer, "Press a key (ESC cancels)", width / 2, height / 2 - 4, 0xFFFFFF);
-        }
-        super.render(c, mx, my, delta);
+    private String trim(String text, int maxWidth) {
+        if (text == null) return "";
+        return textRenderer.trimToWidth(text, Math.max(40, maxWidth));
     }
 
-    @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
-        double x = click.x(), y = click.y();
-        int top = 96, bottom = height - 82;
-        if (y >= top && y < bottom && x >= 8 && x < width - 8) {
-            int rowIndex = (int) ((y - top) / ROW) + scroll;
-            if (rowIndex >= 0 && rowIndex < rows.size()) {
-                Row row = rows.get(rowIndex);
-                selected = rowIndex;
-                if (row.binding() != null) {
-                    KeybindStore.setSelectedId(row.binding().getId());
-                    waiting = true;
-                } else {
-                    saveMessage = "This mod has no registered Minecraft keybind to change.";
-                }
-                return true;
-            }
+    private void selectRow(int index) {
+        if (index < 0 || index >= rows.size()) return;
+        selected = index;
+        Row row = rows.get(index);
+        if (row.binding() == null) {
+            waiting = false;
+            saveMessage = "Selected " + row.modId() + ". This mod has no Minecraft-registered keybind.";
+        } else {
+            waiting = true;
+            saveMessage = "Selected " + row.modId() + ". Press a key now. ESC cancels.";
         }
-        return super.mouseClicked(click, doubled);
+        updateMessage();
+        if (infoWidget != null) infoWidget.setMessage(Text.literal(
+            "MOD MANAGER v7 | Fabric mods: " + KeybindScanner.getLastModCount()
+                + " | keybinds: " + KeybindScanner.getLastKeybindCount()));
+    }
+
+    private void updateMessage() {
+        if (messageWidget != null) messageWidget.setMessage(Text.literal(trim(saveMessage, width - 32)));
     }
 
     @Override
     public boolean keyPressed(KeyInput input) {
         int key = input.key();
         if (waiting) {
-            if (key == GLFW.GLFW_KEY_ESCAPE) { waiting = false; return true; }
-            if (selected >= 0 && selected < rows.size() && rows.get(selected).binding() != null) {
-                KeybindStore.set(rows.get(selected).binding(), key);
-                saveMessage = "Keybind changed and saved to Mod Manager config.";
+            if (key == GLFW.GLFW_KEY_ESCAPE) {
+                waiting = false;
+                saveMessage = "Key assignment cancelled.";
+                updateMessage();
+                return true;
+            }
+            if (selected >= 0 && selected < rows.size()) {
+                KeyBinding binding = rows.get(selected).binding();
+                if (binding != null) {
+                    KeybindStore.set(binding, key);
+                    waiting = false;
+                    saveMessage = "Saved " + binding.getId() + " as " + binding.getBoundKeyLocalizedText().getString();
+                    clearAndInit();
+                    return true;
+                }
             }
             waiting = false;
+            updateMessage();
             return true;
         }
-        if (key == GLFW.GLFW_KEY_ESCAPE) { close(); return true; }
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
+            close();
+            return true;
+        }
         return super.keyPressed(input);
     }
 
-    @Override
-    public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-        int top = 96, bottom = height - 82;
-        int visible = Math.max(1, (bottom - top) / ROW);
-        int max = Math.max(0, rows.size() - visible);
-        scroll = Math.max(0, Math.min(max, scroll - (int) Math.signum(vertical) * 3));
-        return true;
-    }
-
-    private boolean hasConflict(KeyBinding target) {
-        int code = KeybindStore.boundCode(target);
-        if (code < 0) return false;
-        for (KeyBinding other : KeybindScanner.getBindings())
-            if (other != target && KeybindStore.boundCode(other) == code) return true;
-        return false;
-    }
-
     private void restore() {
-        if (selected >= 0 && selected < rows.size() && rows.get(selected).binding() != null) {
-            KeybindStore.restore(rows.get(selected).binding());
-            saveMessage = "Selected keybind restored to its default.";
-        } else saveMessage = "Select a registered keybind first.";
+        if (selected < 0 || selected >= rows.size() || rows.get(selected).binding() == null) {
+            saveMessage = "Select a registered keybind row first.";
+            updateMessage();
+            return;
+        }
+        KeybindStore.restore(rows.get(selected).binding());
+        saveMessage = "Selected keybind restored to its default.";
+        clearAndInit();
     }
 
     private void forceSaveSelected() {
         if (selected < 0 || selected >= rows.size()) {
             saveMessage = "Select a mod row first.";
+            updateMessage();
             return;
         }
-        Row row = rows.get(selected);
-        saveMessage = BackupStore.forceSaveMod(client, row.modId());
+        saveMessage = BackupStore.forceSaveMod(client, rows.get(selected).modId());
+        updateMessage();
     }
 
     private void forceSaveAll() {
         saveMessage = BackupStore.forceSaveAll(client);
+        updateMessage();
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        context.fill(0, 0, width, height, 0xA0101010);
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        int pageCount = Math.max(1, (rows.size() + rowsPerPage - 1) / rowsPerPage);
+        if (verticalAmount < 0 && page + 1 < pageCount) {
+            page++;
+            clearAndInit();
+        } else if (verticalAmount > 0 && page > 0) {
+            page--;
+            clearAndInit();
+        }
+        return true;
     }
 
     @Override
     public void close() {
-        if (waiting) { waiting = false; return; }
+        if (waiting) {
+            waiting = false;
+            saveMessage = "Key assignment cancelled.";
+            updateMessage();
+            return;
+        }
         if (client != null) client.setScreen(parent);
     }
 }
