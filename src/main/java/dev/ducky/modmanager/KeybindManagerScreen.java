@@ -1,6 +1,8 @@
 package dev.ducky.modmanager;
 
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Click;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.option.KeyBinding;
@@ -49,13 +51,15 @@ public final class KeybindManagerScreen extends Screen {
         if(waiting){c.fill(width/2-115,height/2-18,width/2+115,height/2+18,0xE0202020);c.drawCenteredTextWithShadow(textRenderer,"Press a key (ESC cancels)",width/2,height/2-4,0xFFFFFF);}
         super.render(c,mx,my,delta);
     }
-    @Override public boolean mouseClicked(double x,double y,int button){
+    @Override public boolean mouseClicked(Click click, boolean doubled){
+        double x=click.x(), y=click.y();
         if(y>=50&&y<height-32&&x>=8&&x<width-8){int row=(int)((y-50)/ROW)+scroll;if(row>=0&&row<bindings.size()){selected=row;KeybindStore.setSelectedId(bindings.get(row).getId());waiting=true;return true;}}
-        return super.mouseClicked(x,y,button);
+        return super.mouseClicked(click,doubled);
     }
-    @Override public boolean keyPressed(int key,int scan,int mods){
+    @Override public boolean keyPressed(KeyInput input){
+        int key=input.key();
         if(waiting){if(key==GLFW.GLFW_KEY_ESCAPE){waiting=false;return true;}if(selected>=0&&selected<bindings.size()){KeybindStore.set(bindings.get(selected),key);KeybindStore.setSelectedId(bindings.get(selected).getId());waiting=false;}return true;}
-        if(key==GLFW.GLFW_KEY_ESCAPE){close();return true;}return super.keyPressed(key,scan,mods);
+        if(key==GLFW.GLFW_KEY_ESCAPE){close();return true;}return super.keyPressed(input);
     }
     @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical){
         int visible=Math.max(1,(height-86)/ROW),max=Math.max(0,bindings.size()-visible);
