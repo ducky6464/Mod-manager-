@@ -18,7 +18,7 @@ public final class ModManagerClient implements ClientModInitializer {
         openManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.modmanager.open",
             InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_RIGHT_SHIFT,
+            GLFW.GLFW_KEY_RIGHT_CONTROL,
             KeyBinding.Category.MISC
         ));
 
