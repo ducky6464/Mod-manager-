@@ -11,7 +11,7 @@ public final class ModManagerClient implements ClientModInitializer {
     private static KeyBinding openManagerKey;
     @Override public void onInitializeClient() {
         KeybindStore.load();
-        KeybindScanner.scan();
+        // Defer reflective keybind discovery until the client has completed startup.
         openManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.modmanager.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, KeyBinding.Category.MISC));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
