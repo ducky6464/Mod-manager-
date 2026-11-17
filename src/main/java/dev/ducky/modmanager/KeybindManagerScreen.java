@@ -30,9 +30,9 @@ public final class KeybindManagerScreen extends Screen {
         for(int i=scroll;i<Math.min(bindings.size(),scroll+visible);i++){
             KeyBinding k=bindings.get(i);int y=top+(i-scroll)*ROW;
             c.fill(8,y,width-8,y+ROW-2,i==selected?0xB0506080:0x80303030);
-            String label=k.getTranslationKey();if(label.length()>45)label=label.substring(0,42)+"...";
+            String label=k.getId();if(label.length()>45)label=label.substring(0,42)+"...";
             c.drawTextWithShadow(textRenderer,label,14,y+6,0xFFFFFF);
-            c.drawTextWithShadow(textRenderer,k.getBoundKey().getLocalizedText(),Math.max(150,width-120),y+6,0xFFFF80);
+            c.drawTextWithShadow(textRenderer,k.getBoundKeyLocalizedText(),Math.max(150,width-120),y+6,0xFFFF80);
         }
         if(waiting){c.fill(width/2-115,height/2-18,width/2+115,height/2+18,0xE0202020);c.drawCenteredTextWithShadow(textRenderer,"Press a key (ESC cancels)",width/2,height/2-4,0xFFFFFF);}
         super.render(c,mx,my,delta);
