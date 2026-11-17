@@ -23,7 +23,7 @@ public final class KeybindManagerScreen extends Screen {
     private record Row(String modId, String modName, String version, KeyBinding binding, boolean firstForMod) {}
 
     public KeybindManagerScreen(Screen parent) {
-        super(Text.literal("Mod Manager v5"));
+        super(Text.literal("Mod Manager v6"));
         this.parent = parent;
     }
 
