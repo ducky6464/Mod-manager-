@@ -53,7 +53,7 @@ fi
   for file in "$OUT/latest.log" "$OUT/debug.log" "$OUT"/crash-reports/*.txt "$OUT"/hs_err_pid*.log; do
     [[ -f "$file" ]] || continue
     echo "===== $file ====="
-    grep -n -i -B2 -A6 -E 'Caused by:|Exception|Error:|ModLoadingException|Mixin apply failed|Crash report|What went wrong:|Execution failed' "$file" || true
+    grep -n -i -B2 -A6 -E '\[Mod Manager\]|Caused by:|Exception|Error:|ModLoadingException|Mixin apply failed|Crash report|What went wrong:|Execution failed' "$file" || true
     echo
   done
 } > "$OUT/error-extract.txt"
