@@ -22,12 +22,13 @@ public final class KeybindManagerScreen extends Screen {
     private record Row(String modId, String modName, String version, KeyBinding binding, boolean firstForMod) {}
 
     public KeybindManagerScreen(Screen parent) {
-        super(Text.literal("Mod Manager v4"));
+        super(Text.literal("Mod Manager v5"));
         this.parent = parent;
     }
 
     @Override
     protected void init() {
+        KeybindScanner.scan();
         rebuildRows();
         int buttonY = height - 76;
         int buttonY2 = height - 50;
@@ -41,7 +42,7 @@ public final class KeybindManagerScreen extends Screen {
             KeybindScanner.scan();
             rebuildRows();
             scroll = 0;
-            saveMessage = "Rescanned installed mods and registered keybinds.";
+            saveMessage = "Rescan: " + KeybindScanner.getLastScanStatus();
         }).dimensions(124, buttonY2, 82, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> close())
             .dimensions(width - 78, buttonY2, 70, 20).build());
@@ -85,14 +86,19 @@ public final class KeybindManagerScreen extends Screen {
     @Override
     public void render(DrawContext c, int mx, int my, float delta) {
         c.fill(0, 0, width, height, 0xA0101010);
-        c.drawCenteredTextWithShadow(textRenderer, title, width / 2, 7, 0xFFFFFF);
-        c.drawTextWithShadow(textRenderer, "Installed mods: " + KeybindScanner.getInstalledMods().size()
-            + "   |   Registered keybinds: " + KeybindScanner.getBindings().size(), 10, 21, 0xAAAAAA);
-        c.drawTextWithShadow(textRenderer, "Select a keybind row, then press a key to rebind it.", 10, 34, 0xAAAAAA);
+        c.drawCenteredTextWithShadow(textRenderer, title, width / 2, 5, 0xFFFFFF);
+        c.drawTextWithShadow(textRenderer, "Fabric mods found: " + KeybindScanner.getLastModCount()
+            + "   |   Registered keybinds: " + KeybindScanner.getLastKeybindCount(), 10, 19, 0xFFFFFF);
+        c.drawTextWithShadow(textRenderer, "Scan: " + KeybindScanner.getLastScanStatus(), 10, 31, 0x80FF80);
+        String scanError = KeybindScanner.getLastScanError();
+        if (!"None".equals(scanError)) {
+            c.drawTextWithShadow(textRenderer, "ERROR: " + textRenderer.trimToWidth(scanError, width - 62), 10, 43, 0xFF7070);
+        }
+        c.drawTextWithShadow(textRenderer, "Select a keybind row, then press a key to rebind it.", 10, 55, 0xAAAAAA);
         if (!saveMessage.isEmpty()) c.drawTextWithShadow(textRenderer,
-            textRenderer.trimToWidth(saveMessage, width - 20), 10, 46, 0x80FF80);
+            textRenderer.trimToWidth(saveMessage, width - 20), 10, 67, 0x80FF80);
 
-        int top = 62;
+        int top = 82;
         int bottom = height - 82;
         int visible = Math.max(1, (bottom - top) / ROW);
         for (int i = scroll; i < Math.min(rows.size(), scroll + visible); i++) {
@@ -124,7 +130,7 @@ public final class KeybindManagerScreen extends Screen {
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         double x = click.x(), y = click.y();
-        int top = 62, bottom = height - 82;
+        int top = 82, bottom = height - 82;
         if (y >= top && y < bottom && x >= 8 && x < width - 8) {
             int rowIndex = (int) ((y - top) / ROW) + scroll;
             if (rowIndex >= 0 && rowIndex < rows.size()) {
