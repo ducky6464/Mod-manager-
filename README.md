@@ -1,47 +1,37 @@
-# Mod Manager v3
+# Mod Manager v4
 
-A lightweight client-side Fabric mod for Minecraft **1.21.11**.
+A client-side Fabric mod for Minecraft **1.21.11**.
 
 ## Controls
 
 - Open the manager with **Right Control** by default.
-- Change the menu key in **Options → Controls → Key Binds**.
-- Click a keybind row, then press the key you want to assign.
+- Change the manager key in **Options → Controls → Key Binds**.
+- Scroll through the installed-mod list.
+- Select a registered keybind row and press a key to rebind it.
 - Press **Escape** while assigning to cancel.
-- Use **Restore default** to restore the selected binding.
-- Use **Rescan** after another mod registers keybinds late.
-- Scroll through the list when the screen is short.
+- Use **Restore default** to reset the selected registered keybind.
+- Use **Force Save Selected** to back up config files whose paths or names match the selected mod ID.
+- Use **Force Save All** to write Minecraft options and create a best-effort snapshot of settings/config files.
+- Use **Rescan** after changing the installed mod set or when mods register keybinds late.
 
-## What it does
+## Features
 
-- Finds keybinds registered in Minecraft's `KeyBinding` registry by loaded mods.
-- Displays the owning mod name when it can be identified, the keybind ID, current key, and default key.
-- Saves key assignments and the selected row in `config/mod-manager.properties`.
-- Reapplies saved assignments periodically in case another mod resets a registered keybind.
-- Flags key conflicts in the list.
-- Keeps the manager list scrollable so it remains usable at small GUI resolutions.
+- Lists every mod exposed by Fabric Loader, including mods with no registered keybind.
+- Shows each mod's display name, ID, and version.
+- Shows registered Minecraft keybinds associated with a mod ID, or "No registered keybind".
+- Allows rebinding normal Minecraft-registered keybinds and stores changes in `config/mod-manager.properties`.
+- Attempts to reapply saved key assignments after launch.
+- Reports backup success/failure instead of silently claiming a save worked.
+- Uses a scrollable list and avoids the game's blur pass in its screen renderer.
 
-## Install
+## Force-save behavior
 
-1. Install Fabric Loader for Minecraft 1.21.11.
-2. Install Fabric API for Minecraft 1.21.11.
-3. Put the Mod Manager v3 JAR in your Minecraft `mods` folder.
-4. Launch the Fabric profile and press **Right Control** in-game.
+- **Force Save Selected** is best-effort. It backs up config files whose relative path or filename contains the selected mod ID to `config/mod-manager-backups/mods/<modid>/latest`. If the mod uses a generic filename or stores settings elsewhere, the manager may not identify those files.
+- **Force Save All** asks Minecraft to write its options, then snapshots small settings/config files under the game directory to `config/mod-manager-backups/latest`. It excludes worlds, mods, assets, resource packs, logs, and other large game data.
+- A backup is a copy of files currently on disk. It cannot force a private client to serialize settings that exist only in memory, use encryption, or use an unknown storage location.
 
-## Build
+## Compatibility limits
 
-Requires JDK 21.
+This manager can rebind keybindings registered with Minecraft's standard `KeyBinding` registry. It lists all Fabric Loader mods, but it cannot universally discover or change a private hack-client menu key if that client uses its own unregistered key system. That requires a client-specific adapter or inspection of the client's JAR/config format.
 
-```sh
-gradle build
-```
-
-The JAR is written to `build/libs/`. The GitHub Actions workflow also builds the project and uploads the JAR as an artifact.
-
-## Important compatibility limits
-
-This mod manages **normal Minecraft-registered keybindings**. It cannot automatically change a client's private menu/module key system when that client does not register it as a Minecraft `KeyBinding`. There is no safe universal way to rewrite every third-party client's private configuration format.
-
-The manager's own list is compact and scrollable. It does **not** resize the internal GUI of every third-party client. That requires a separate adapter or supported scaling hook for each client, and must be tested against those clients individually.
-
-The automated build must pass before a release is considered ready. Runtime behavior still needs testing in a real Minecraft 1.21.11 instance with the user's specific mod/client collection.
+The automated build must pass before the JAR is treated as ready. A successful build does not replace testing in the user's actual Minecraft instance and client.
