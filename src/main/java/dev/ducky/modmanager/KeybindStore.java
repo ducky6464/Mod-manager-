@@ -2,6 +2,7 @@ package dev.ducky.modmanager;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.util.InputUtil;
 import java.io.*;
 import java.lang.reflect.*;
@@ -48,7 +49,7 @@ public final class KeybindStore {
     }
     public static synchronized void set(KeyBinding b,int code) {
         remember(b); SAVED.put(b.getId(),code);
-        b.setBoundKey(InputUtil.fromKeyCode(code,0)); refreshIndex(); save();
+        b.setBoundKey(InputUtil.fromKeyCode(new KeyInput(code,0,0))); refreshIndex(); save();
     }
     public static synchronized void restore(KeyBinding b) {
         Integer v=ORIGINAL.get(b.getId()); if(v!=null) set(b,v);
@@ -57,7 +58,7 @@ public final class KeybindStore {
         boolean changed=false;
         for(KeyBinding b:KeybindScanner.getBindings()) {
             Integer code=SAVED.get(b.getId());
-            if(code!=null && boundCode(b)!=code) { b.setBoundKey(InputUtil.fromKeyCode(code,0)); changed=true; }
+            if(code!=null && boundCode(b)!=code) { b.setBoundKey(InputUtil.fromKeyCode(new KeyInput(code,0,0))); changed=true; }
         }
         if(changed) refreshIndex();
     }
