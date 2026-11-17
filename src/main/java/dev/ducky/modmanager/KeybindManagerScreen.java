@@ -22,6 +22,7 @@ public final class KeybindManagerScreen extends Screen {
     private ButtonWidget messageWidget;
 
     private record Row(String modId, String modName, String version, KeyBinding binding) {}
+    private record ModInfo(String id, String name, String version) {}
 
     public KeybindManagerScreen(Screen parent) {
         super(Text.literal("Mod Manager v7"));
@@ -125,33 +126,30 @@ public final class KeybindManagerScreen extends Screen {
 
     private void rebuildRows() {
         rows.clear();
+
+        // Mod enumeration is the primary list source. It must not depend on keybind reflection.
+        List<ModInfo> installed = new ArrayList<>();
         try {
-            List<KeyBinding> bindings = KeybindScanner.getBindings();
-            Map<String, List<KeyBinding>> byMod = new HashMap<>();
-            List<KeyBinding> unassigned = new ArrayList<>();
-
-            for (KeyBinding binding : bindings) {
-                String owner = KeybindScanner.findOwnerModId(binding.getId());
-                if (owner == null) unassigned.add(binding);
-                else byMod.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(binding);
-            }
-
             for (var mod : KeybindScanner.getInstalledMods()) {
                 String id;
-                String name;
-                String version;
                 try {
                     id = mod.getMetadata().getId();
+                    if (id == null || id.isBlank()) id = "unknown-mod";
                 } catch (Throwable error) {
-                    System.err.println("[Mod Manager] Could not read a mod ID: " + error);
+                    System.err.println("[Mod Manager] Could not read mod ID: " + error);
                     continue;
                 }
+
+                String name;
                 try {
                     name = mod.getMetadata().getName();
+                    if (name == null || name.isBlank()) name = id;
                 } catch (Throwable error) {
                     name = id;
                     System.err.println("[Mod Manager] Could not read display name for " + id + ": " + error);
                 }
+
+                String version;
                 try {
                     version = mod.getMetadata().getVersion().getFriendlyString();
                 } catch (Throwable error) {
@@ -159,28 +157,76 @@ public final class KeybindManagerScreen extends Screen {
                     System.err.println("[Mod Manager] Could not read version for " + id + ": " + error);
                 }
 
-                List<KeyBinding> owned = byMod.getOrDefault(id, List.of());
-                if (owned.isEmpty()) {
-                    rows.add(new Row(id, name, version, null));
-                } else {
-                    for (KeyBinding binding : owned) rows.add(new Row(id, name, version, binding));
+                installed.add(new ModInfo(id, name, version));
+            }
+        } catch (Throwable error) {
+            saveMessage = "MOD ENUMERATION FAILED: " + error.getClass().getSimpleName()
+                + ": " + String.valueOf(error.getMessage());
+            System.err.println("[Mod Manager] " + saveMessage);
+            error.printStackTrace(System.err);
+        }
+
+        // Keybind discovery is optional. A failure here must never remove installed mod rows.
+        Map<String, List<KeyBinding>> byMod = new HashMap<>();
+        List<KeyBinding> unassigned = new ArrayList<>();
+        List<KeyBinding> bindings = List.of();
+        try {
+            bindings = KeybindScanner.getBindings();
+        } catch (Throwable error) {
+            saveMessage = "Mods loaded; keybind scan failed: " + error.getClass().getSimpleName();
+            System.err.println("[Mod Manager] " + saveMessage + ": " + error.getMessage());
+            error.printStackTrace(System.err);
+        }
+
+        Set<String> modIds = new HashSet<>();
+        for (ModInfo mod : installed) modIds.add(mod.id());
+
+        for (KeyBinding binding : bindings) {
+            try {
+                String keyId = binding.getId();
+                String owner = findOwner(keyId, modIds);
+                if (owner == null) unassigned.add(binding);
+                else byMod.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(binding);
+            } catch (Throwable error) {
+                System.err.println("[Mod Manager] Skipping unreadable keybind: " + error);
+                error.printStackTrace(System.err);
+            }
+        }
+
+        for (ModInfo mod : installed) {
+            List<KeyBinding> owned = byMod.getOrDefault(mod.id(), List.of());
+            if (owned.isEmpty()) {
+                rows.add(new Row(mod.id(), mod.name(), mod.version(), null));
+            } else {
+                for (KeyBinding binding : owned) {
+                    rows.add(new Row(mod.id(), mod.name(), mod.version(), binding));
                 }
             }
-
-            for (KeyBinding binding : unassigned) {
-                rows.add(new Row("minecraft/unassigned", "Minecraft / Unassigned", "", binding));
-            }
-
-            System.err.println("[Mod Manager] V7 UI rows=" + rows.size()
-                + " FabricMods=" + KeybindScanner.getLastModCount()
-                + " Keybinds=" + KeybindScanner.getLastKeybindCount());
-        } catch (Throwable error) {
-            rows.clear();
-            System.err.println("[Mod Manager] V7 row build failed: " + error);
-            error.printStackTrace(System.err);
-            saveMessage = "ROW BUILD FAILED: " + error.getClass().getSimpleName()
-                + ": " + String.valueOf(error.getMessage());
         }
+
+        for (KeyBinding binding : unassigned) {
+            rows.add(new Row("minecraft/unassigned", "Minecraft / Unassigned", "", binding));
+        }
+
+        if (installed.isEmpty() && saveMessage.isBlank()) {
+            saveMessage = "Fabric Loader returned no installed mods. Check the loader status above.";
+        }
+
+        System.err.println("[Mod Manager] V7 UI rows=" + rows.size()
+            + " FabricMods=" + KeybindScanner.getLastModCount()
+            + " Keybinds=" + KeybindScanner.getLastKeybindCount());
+    }
+
+    private String findOwner(String keyId, Set<String> modIds) {
+        if (keyId == null || !keyId.startsWith("key.")) return null;
+        String remainder = keyId.substring(4);
+        String best = null;
+        for (String id : modIds) {
+            if (remainder.startsWith(id + ".") && (best == null || id.length() > best.length())) {
+                best = id;
+            }
+        }
+        return best;
     }
 
     private String trim(String text, int maxWidth) {
