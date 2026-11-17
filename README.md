@@ -44,3 +44,5 @@ The automated build must pass before the JAR is treated as ready. A successful b
 - Fabric mod discovery handles individual metadata failures without discarding the whole list.
 - If full enumeration fails, the manager attempts a direct lookup of its own Fabric container so the screen can still show a visible row and report the state.
 - CI runs a clean build, verifies the exact v7 JAR filename and embedded fabric.mod.json name, and uploads only that JAR.
+
+- Installed-mod row construction is independent from keybind reflection, so a keybind scan failure cannot blank the mod list.
