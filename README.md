@@ -1,4 +1,4 @@
-# Mod Manager v5
+# Mod Manager v7
 
 A client-side Fabric mod for Minecraft **1.21.11**.
 
