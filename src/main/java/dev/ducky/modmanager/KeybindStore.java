@@ -13,7 +13,6 @@ public final class KeybindStore {
     private static final Map<String,Integer> SAVED = new LinkedHashMap<>();
     private static final Map<String,Integer> ORIGINAL = new LinkedHashMap<>();
     private static Field boundKeyField;
-    private static Method updateMethod;
     private static boolean loaded;
     private static String selectedId = "";
     private KeybindStore() {}
@@ -28,18 +27,20 @@ public final class KeybindStore {
             if (n.startsWith("default.")) ORIGINAL.put(n.substring(8), Integer.parseInt(p.getProperty(n)));
         } catch (NumberFormatException ignored) {}
         try {
-            boundKeyField=KeyBinding.class.getDeclaredField("boundKey"); boundKeyField.setAccessible(true);
-            updateMethod=KeyBinding.class.getDeclaredMethod("updateKeysByCode"); updateMethod.setAccessible(true);
-        } catch (ReflectiveOperationException e) { System.err.println("[Mod Manager] Could not access keybind internals: "+e.getMessage()); }
+            String fieldName = FabricLoader.getInstance().getMappingResolver().mapFieldName(
+                "intermediary", "net/minecraft/class_304", "field_1655",
+                "Lnet/minecraft/class_3675$class_306;");
+            boundKeyField=KeyBinding.class.getDeclaredField(fieldName);
+            boundKeyField.setAccessible(true);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            System.err.println("[Mod Manager] Could not access the current keybind: "+e.getMessage());
+        }
     }
     public static synchronized int boundCode(KeyBinding b) {
         try { return ((InputUtil.Key)boundKeyField.get(b)).getCode(); }
         catch (ReflectiveOperationException|NullPointerException e) { return -1; }
     }
-    private static void refreshIndex() {
-        try { if(updateMethod!=null) updateMethod.invoke(null); }
-        catch (ReflectiveOperationException e) { System.err.println("[Mod Manager] Key index refresh failed: "+e.getMessage()); }
-    }
+    private static void refreshIndex() { KeyBinding.updateKeysByCode(); }
     public static synchronized void remember(KeyBinding b) {
         String id=b.getId();
         ORIGINAL.putIfAbsent(id,b.getDefaultKey().getCode());
