@@ -116,31 +116,45 @@ public final class KeybindScanner {
     }
 
     public static List<ModContainer> getInstalledMods() {
+        FabricLoader loader;
         try {
-            FabricLoader loader = FabricLoader.getInstance();
-            List<ModContainer> mods = new ArrayList<>(loader.getAllMods());
-
-            // Keep the manager visible even if a custom loader returns an incomplete mod collection.
-            if (mods.stream().noneMatch(mod -> "modmanager".equals(safeModId(mod)))) {
-                loader.getModContainer("modmanager").ifPresent(mods::add);
-            }
-
-            mods.sort(Comparator.comparing(KeybindScanner::safeModName, String.CASE_INSENSITIVE_ORDER)
-                .thenComparing(KeybindScanner::safeModId, String.CASE_INSENSITIVE_ORDER));
-            lastModCount = mods.size();
-            if (mods.isEmpty()) {
-                lastScanStatus = "EMPTY: Fabric Loader returned no mod containers";
-                lastScanError = "FabricLoader.getAllMods() returned an empty list";
-                System.err.println("[Mod Manager] V7 EMPTY MOD LIST");
-            }
-            return mods;
+            loader = FabricLoader.getInstance();
         } catch (Throwable error) {
-            lastScanError = "Fabric Loader mod list: " + describe(error);
+            lastScanError = "Fabric Loader instance: " + describe(error);
             lastScanStatus = "FAILED";
             System.err.println("[Mod Manager] " + lastScanError);
             error.printStackTrace(System.err);
             return List.of();
         }
+
+        List<ModContainer> mods = new ArrayList<>();
+        try {
+            mods.addAll(loader.getAllMods());
+        } catch (Throwable error) {
+            lastScanError = "FabricLoader.getAllMods failed: " + describe(error);
+            lastScanStatus = "PARTIAL";
+            System.err.println("[Mod Manager] " + lastScanError);
+            error.printStackTrace(System.err);
+        }
+
+        // The manager must remain visible even if a custom loader returns an incomplete collection.
+        if (mods.stream().noneMatch(mod -> "modmanager".equals(safeModId(mod)))) {
+            try {
+                loader.getModContainer("modmanager").ifPresent(mods::add);
+            } catch (Throwable error) {
+                reportError("Fallback lookup for modmanager", error);
+            }
+        }
+
+        mods.sort(Comparator.comparing(KeybindScanner::safeModName, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(KeybindScanner::safeModId, String.CASE_INSENSITIVE_ORDER));
+        lastModCount = mods.size();
+        if (mods.isEmpty()) {
+            lastScanStatus = "EMPTY: Fabric Loader returned no mod containers";
+            lastScanError = "FabricLoader.getAllMods() and the modmanager fallback returned no containers";
+            System.err.println("[Mod Manager] V7 EMPTY MOD LIST");
+        }
+        return mods;
     }
 
     public static String getLastScanStatus() { return lastScanStatus; }
