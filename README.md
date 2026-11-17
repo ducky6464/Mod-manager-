@@ -1,4 +1,4 @@
-# Mod Manager v4
+# Mod Manager v5
 
 A client-side Fabric mod for Minecraft **1.21.11**.
 
