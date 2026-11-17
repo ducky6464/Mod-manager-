@@ -53,12 +53,6 @@ public final class BackupStore {
                 }
             }
 
-            // Keep a dedicated copy of the standard config directory.
-            Path configDir = FabricLoader.getInstance().getConfigDir();
-            if (Files.isDirectory(configDir)) {
-                copyDirectory(configDir, staging.resolve("config"));
-            }
-
             Path dated = BACKUP_ROOT.resolve("backup-" +
                 LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")));
             deleteTree(latest);
@@ -77,7 +71,7 @@ public final class BackupStore {
         Files.walkFileTree(source, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                if (Files.isSymbolicLink(dir)) return FileVisitResult.SKIP_SUBTREE;
+                if (Files.isSymbolicLink(dir) || dir.normalize().startsWith(BACKUP_ROOT.normalize())) return FileVisitResult.SKIP_SUBTREE;
                 Path relative = source.relativize(dir);
                 Files.createDirectories(target.resolve(relative));
                 return FileVisitResult.CONTINUE;
