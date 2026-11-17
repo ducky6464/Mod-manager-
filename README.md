@@ -6,7 +6,9 @@ A client-side Fabric mod for Minecraft **1.21.11**.
 
 - Opens the manager with **Right Shift**.
 - Scans registered Minecraft `KeyBinding` collections to discover keybinds supplied by loaded mods.
+- Shows the owning mod name and key ID for registered bindings.
 - Lets you select a discovered binding and assign a keyboard key.
+- Remembers the selected binding between launches.
 - Saves assignments in `config/mod-manager.properties`.
 - Periodically reapplies saved assignments, which may help when another mod resets a registered keybind.
 - Includes restore-default and rescan actions.
