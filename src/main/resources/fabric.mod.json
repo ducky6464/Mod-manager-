@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "modmanager",
   "version": "${version}",
-  "name": "Mod Manager",
+  "name": "Mod Manager v2",
   "description": "Automatically discovers registered Minecraft keybinds and keeps your chosen bindings persistent.",
   "authors": ["ducky6464"],
   "license": "MIT",
