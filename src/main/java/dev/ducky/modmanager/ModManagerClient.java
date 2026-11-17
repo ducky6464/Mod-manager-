@@ -2,6 +2,7 @@ package dev.ducky.modmanager;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -14,28 +15,25 @@ public final class ModManagerClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         KeybindStore.load();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> BackupStore.forceSave(client));
 
         openManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.modmanager.open",
             InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_RIGHT_SHIFT,
+            GLFW.GLFW_KEY_RIGHT_CONTROL,
             KeyBinding.Category.MISC
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            // Do not inspect Minecraft's keybind registry during startup.
-            // Wait until a world and player exist, then scan exactly once.
             if (!initialScanComplete && client.world != null && client.player != null) {
-                initialScanComplete = true;
                 try {
                     KeybindScanner.scan();
                     KeybindStore.reapplySavedBindings();
+                    initialScanComplete = true;
                 } catch (RuntimeException error) {
-                    System.err.println("[Mod Manager] Initial keybind scan failed safely: "
-                        + error.getMessage());
+                    System.err.println("[Mod Manager] Initial scan failed; will retry: " + error.getMessage());
                 }
             }
-
             if (openManagerKey.wasPressed() && client.currentScreen == null) {
                 client.setScreen(new KeybindManagerScreen(null));
             }

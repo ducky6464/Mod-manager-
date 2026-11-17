@@ -2,75 +2,202 @@ package dev.ducky.modmanager;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Click;
-import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.option.KeyBinding;
+import net.fabricmc.loader.api.ModContainer;
 import net.minecraft.text.Text;
-import net.fabricmc.loader.api.FabricLoader;
 import org.lwjgl.glfw.GLFW;
-import java.util.List;
+
+import java.util.*;
 
 public final class KeybindManagerScreen extends Screen {
     private final Screen parent;
-    private List<KeyBinding> bindings;
-    private int scroll,selected=-1;
+    private final List<Row> rows = new ArrayList<>();
+    private int scroll, selected = -1;
     private boolean waiting;
-    private static final int ROW=30;
-    public KeybindManagerScreen(Screen parent){super(Text.literal("Mod Manager"));this.parent=parent;}
-    @Override protected void init(){
-        bindings=KeybindScanner.getBindings();
-        String remembered=KeybindStore.getSelectedId();
-        selected=-1;
-        for(int i=0;i<bindings.size();i++) if(bindings.get(i).getId().equals(remembered)){selected=i;break;}
-        if(selected>=0) scroll=Math.max(0,selected-Math.max(1,(height-86)/ROW)+1);
-        int y=height-27;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"),b->restore()).dimensions(8,y,110,20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"),b->{KeybindScanner.scan();bindings=KeybindScanner.getBindings();scroll=0;}).dimensions(124,y,75,20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Done"),b->close()).dimensions(width-78,y,70,20).build());
+    private String saveMessage = "";
+    private static final int ROW = 38;
+    private record Row(String modId, String modName, String version, KeyBinding binding, boolean firstForMod) {}
+
+    public KeybindManagerScreen(Screen parent) {
+        super(Text.literal("Mod Manager v4"));
+        this.parent = parent;
     }
-    @Override public void render(DrawContext c,int mx,int my,float delta){
-        renderBackground(c,mx,my,delta);
-        c.drawCenteredTextWithShadow(textRenderer,title,width/2,8,0xFFFFFF);
-        c.drawTextWithShadow(textRenderer,"Found registered keybinds: "+bindings.size(),10,22,0xAAAAAA);
-        c.drawTextWithShadow(textRenderer,"Select a row, then press a key. Scroll to see more.",10,34,0xAAAAAA);
-        int top=50,visible=Math.max(1,(height-86)/ROW);
-        for(int i=scroll;i<Math.min(bindings.size(),scroll+visible);i++){
-            KeyBinding k=bindings.get(i);int y=top+(i-scroll)*ROW;
-            c.fill(8,y,width-8,y+ROW-2,i==selected?0xB0506080:0x80303030);
-            String id=k.getId();
-            String modId=id.startsWith("key.")&&id.length()>4?id.substring(4).split("\\.")[0]:"minecraft";
-            String modName=FabricLoader.getInstance().getModContainer(modId)
-                .map(m->m.getMetadata().getName()).orElse(modId.equals("minecraft")?"Minecraft":modId);
-            String label=modName+"  •  "+id;
-            c.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(label,Math.max(40,width-28)),14,y+3,0xFFFFFF);
-            String keys="Now: "+k.getBoundKeyLocalizedText().getString()+"   |   Default: "+k.getDefaultKey().getLocalizedText().getString();
-            c.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(keys,Math.max(40,width-28)),14,y+16,0xFFFF80);
-            if(hasConflict(k)) c.drawTextWithShadow(textRenderer,"!",width-18,y+6,0xFF5555);
+
+    @Override
+    protected void init() {
+        rebuildRows();
+        int buttonY = height - 76;
+        int buttonY2 = height - 50;
+        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"), b -> restore())
+            .dimensions(8, buttonY, 104, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save Selected"), b -> forceSaveSelected())
+            .dimensions(116, buttonY, Math.max(110, width - 124), 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"), b -> forceSaveAll())
+            .dimensions(8, buttonY2, 112, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"), b -> {
+            KeybindScanner.scan();
+            rebuildRows();
+            scroll = 0;
+            saveMessage = "Rescanned installed mods and registered keybinds.";
+        }).dimensions(124, buttonY2, 82, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> close())
+            .dimensions(width - 78, buttonY2, 70, 20).build());
+    }
+
+    private void rebuildRows() {
+        rows.clear();
+        List<KeyBinding> bindings = KeybindScanner.getBindings();
+        Map<String, List<KeyBinding>> byMod = new HashMap<>();
+        List<KeyBinding> unassigned = new ArrayList<>();
+        for (KeyBinding binding : bindings) {
+            String owner = KeybindScanner.findOwnerModId(binding.getId());
+            if (owner == null) unassigned.add(binding);
+            else byMod.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(binding);
         }
-        if(waiting){c.fill(width/2-115,height/2-18,width/2+115,height/2+18,0xE0202020);c.drawCenteredTextWithShadow(textRenderer,"Press a key (ESC cancels)",width/2,height/2-4,0xFFFFFF);}
-        super.render(c,mx,my,delta);
+
+        for (ModContainer mod : KeybindScanner.getInstalledMods()) {
+            String id = mod.getMetadata().getId();
+            String name = mod.getMetadata().getName();
+            String version = mod.getMetadata().getVersion().getFriendlyString();
+            List<KeyBinding> owned = byMod.getOrDefault(id, List.of());
+            if (owned.isEmpty()) rows.add(new Row(id, name, version, null, true));
+            else {
+                boolean first = true;
+                for (KeyBinding binding : owned) {
+                    rows.add(new Row(id, name, version, binding, first));
+                    first = false;
+                }
+            }
+        }
+        if (!unassigned.isEmpty()) {
+            boolean first = true;
+            for (KeyBinding binding : unassigned) {
+                rows.add(new Row("minecraft/unassigned", "Minecraft / Unassigned", "", binding, first));
+                first = false;
+            }
+        }
+        if (selected >= rows.size()) selected = -1;
     }
-    @Override public boolean mouseClicked(Click click, boolean doubled){
-        double x=click.x(), y=click.y();
-        if(y>=50&&y<height-32&&x>=8&&x<width-8){int row=(int)((y-50)/ROW)+scroll;if(row>=0&&row<bindings.size()){selected=row;KeybindStore.setSelectedId(bindings.get(row).getId());waiting=true;return true;}}
-        return super.mouseClicked(click,doubled);
+
+    @Override
+    public void render(DrawContext c, int mx, int my, float delta) {
+        c.fill(0, 0, width, height, 0xA0101010);
+        c.drawCenteredTextWithShadow(textRenderer, title, width / 2, 7, 0xFFFFFF);
+        c.drawTextWithShadow(textRenderer, "Installed mods: " + KeybindScanner.getInstalledMods().size()
+            + "   |   Registered keybinds: " + KeybindScanner.getBindings().size(), 10, 21, 0xAAAAAA);
+        c.drawTextWithShadow(textRenderer, "Select a keybind row, then press a key to rebind it.", 10, 34, 0xAAAAAA);
+        if (!saveMessage.isEmpty()) c.drawTextWithShadow(textRenderer,
+            textRenderer.trimToWidth(saveMessage, width - 20), 10, 46, 0x80FF80);
+
+        int top = 62;
+        int bottom = height - 82;
+        int visible = Math.max(1, (bottom - top) / ROW);
+        for (int i = scroll; i < Math.min(rows.size(), scroll + visible); i++) {
+            Row row = rows.get(i);
+            int y = top + (i - scroll) * ROW;
+            c.fill(8, y, width - 8, y + ROW - 2, i == selected ? 0xB0506080 : 0x80303030);
+            String heading = row.firstForMod()
+                ? row.modName() + "  (" + row.modId() + ")  " + row.version()
+                : "  " + row.modName() + "  (" + row.modId() + ")";
+            c.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(heading, width - 28), 14, y + 3, 0xFFFFFF);
+            String detail;
+            if (row.binding() == null) detail = "No registered keybind";
+            else {
+                KeyBinding key = row.binding();
+                detail = key.getId() + "  |  Now: " + key.getBoundKeyLocalizedText().getString()
+                    + "  |  Default: " + key.getDefaultKey().getLocalizedText().getString();
+                if (hasConflict(key)) detail += "  [CONFLICT]";
+            }
+            c.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(detail, width - 28),
+                14, y + 19, row.binding() == null ? 0xAAAAAA : 0xFFFF80);
+        }
+        if (waiting) {
+            c.fill(width / 2 - 115, height / 2 - 18, width / 2 + 115, height / 2 + 18, 0xE0202020);
+            c.drawCenteredTextWithShadow(textRenderer, "Press a key (ESC cancels)", width / 2, height / 2 - 4, 0xFFFFFF);
+        }
+        super.render(c, mx, my, delta);
     }
-    @Override public boolean keyPressed(KeyInput input){
-        int key=input.key();
-        if(waiting){if(key==GLFW.GLFW_KEY_ESCAPE){waiting=false;return true;}if(selected>=0&&selected<bindings.size()){KeybindStore.set(bindings.get(selected),key);KeybindStore.setSelectedId(bindings.get(selected).getId());waiting=false;}return true;}
-        if(key==GLFW.GLFW_KEY_ESCAPE){close();return true;}return super.keyPressed(input);
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubled) {
+        double x = click.x(), y = click.y();
+        int top = 62, bottom = height - 82;
+        if (y >= top && y < bottom && x >= 8 && x < width - 8) {
+            int rowIndex = (int) ((y - top) / ROW) + scroll;
+            if (rowIndex >= 0 && rowIndex < rows.size()) {
+                Row row = rows.get(rowIndex);
+                selected = rowIndex;
+                if (row.binding() != null) {
+                    KeybindStore.setSelectedId(row.binding().getId());
+                    waiting = true;
+                } else {
+                    saveMessage = "This mod has no registered Minecraft keybind to change.";
+                }
+                return true;
+            }
+        }
+        return super.mouseClicked(click, doubled);
     }
-    @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical){
-        int visible=Math.max(1,(height-86)/ROW),max=Math.max(0,bindings.size()-visible);
-        scroll=Math.max(0,Math.min(max,scroll-(int)Math.signum(vertical)*3));return true;
+
+    @Override
+    public boolean keyPressed(KeyInput input) {
+        int key = input.key();
+        if (waiting) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) { waiting = false; return true; }
+            if (selected >= 0 && selected < rows.size() && rows.get(selected).binding() != null) {
+                KeybindStore.set(rows.get(selected).binding(), key);
+                saveMessage = "Keybind changed and saved to Mod Manager config.";
+            }
+            waiting = false;
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_ESCAPE) { close(); return true; }
+        return super.keyPressed(input);
     }
-    private boolean hasConflict(KeyBinding target){
-        int code=KeybindStore.boundCode(target);
-        if(code<0)return false;
-        for(KeyBinding other:bindings)if(other!=target&&KeybindStore.boundCode(other)==code)return true;
+
+    @Override
+    public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        int top = 62, bottom = height - 82;
+        int visible = Math.max(1, (bottom - top) / ROW);
+        int max = Math.max(0, rows.size() - visible);
+        scroll = Math.max(0, Math.min(max, scroll - (int) Math.signum(vertical) * 3));
+        return true;
+    }
+
+    private boolean hasConflict(KeyBinding target) {
+        int code = KeybindStore.boundCode(target);
+        if (code < 0) return false;
+        for (KeyBinding other : KeybindScanner.getBindings())
+            if (other != target && KeybindStore.boundCode(other) == code) return true;
         return false;
     }
-    private void restore(){if(selected>=0&&selected<bindings.size())KeybindStore.restore(bindings.get(selected));}
-    @Override public void close(){if(waiting){waiting=false;return;}if(client!=null)client.setScreen(parent);}
+
+    private void restore() {
+        if (selected >= 0 && selected < rows.size() && rows.get(selected).binding() != null) {
+            KeybindStore.restore(rows.get(selected).binding());
+            saveMessage = "Selected keybind restored to its default.";
+        } else saveMessage = "Select a registered keybind first.";
+    }
+
+    private void forceSaveSelected() {
+        if (selected < 0 || selected >= rows.size()) {
+            saveMessage = "Select a mod row first.";
+            return;
+        }
+        Row row = rows.get(selected);
+        saveMessage = BackupStore.forceSaveMod(client, row.modId());
+    }
+
+    private void forceSaveAll() {
+        saveMessage = BackupStore.forceSaveAll(client);
+    }
+
+    @Override
+    public void close() {
+        if (waiting) { waiting = false; return; }
+        if (client != null) client.setScreen(parent);
+    }
 }
