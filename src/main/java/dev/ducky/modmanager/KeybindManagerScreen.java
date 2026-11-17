@@ -18,6 +18,7 @@ public final class KeybindManagerScreen extends Screen {
     private int scroll, selected = -1;
     private boolean waiting;
     private String saveMessage = "";
+    private String listStatus = "Waiting for scan";
     private static final int ROW = 38;
     private record Row(String modId, String modName, String version, KeyBinding binding, boolean firstForMod) {}
 
@@ -50,6 +51,8 @@ public final class KeybindManagerScreen extends Screen {
 
     private void rebuildRows() {
         rows.clear();
+        try {
+        List<ModContainer> installedMods = KeybindScanner.getInstalledMods();
         List<KeyBinding> bindings = KeybindScanner.getBindings();
         Map<String, List<KeyBinding>> byMod = new HashMap<>();
         List<KeyBinding> unassigned = new ArrayList<>();
@@ -59,7 +62,7 @@ public final class KeybindManagerScreen extends Screen {
             else byMod.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(binding);
         }
 
-        for (ModContainer mod : KeybindScanner.getInstalledMods()) {
+        for (ModContainer mod : installedMods) {
             String id = mod.getMetadata().getId();
             String name = mod.getMetadata().getName();
             String version = mod.getMetadata().getVersion().getFriendlyString();
@@ -81,6 +84,15 @@ public final class KeybindManagerScreen extends Screen {
             }
         }
         if (selected >= rows.size()) selected = -1;
+        listStatus = "Rows displayed: " + rows.size() + " | Fabric mods: " + installedMods.size() + " | keybinds: " + bindings.size();
+        System.err.println("[Mod Manager] UI " + listStatus);
+        } catch (Throwable error) {
+            rows.clear();
+            selected = -1;
+            listStatus = "LIST BUILD FAILED: " + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage());
+            System.err.println("[Mod Manager] " + listStatus);
+            error.printStackTrace(System.err);
+        }
     }
 
     @Override
@@ -95,12 +107,19 @@ public final class KeybindManagerScreen extends Screen {
             c.drawTextWithShadow(textRenderer, "ERROR: " + textRenderer.trimToWidth(scanError, width - 62), 10, 43, 0xFF7070);
         }
         c.drawTextWithShadow(textRenderer, "Select a keybind row, then press a key to rebind it.", 10, 55, 0xAAAAAA);
+        c.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(listStatus, width - 20), 10, 67, 0xFFFFFF);
         if (!saveMessage.isEmpty()) c.drawTextWithShadow(textRenderer,
-            textRenderer.trimToWidth(saveMessage, width - 20), 10, 67, 0x80FF80);
+            textRenderer.trimToWidth(saveMessage, width - 20), 10, 79, 0x80FF80);
 
-        int top = 82;
+        int top = 96;
         int bottom = height - 82;
         int visible = Math.max(1, (bottom - top) / ROW);
+        if (rows.isEmpty()) {
+            String emptyMessage = KeybindScanner.getLastModCount() == 0
+                ? "Fabric Loader returned zero installed mods."
+                : "No mod rows were built. Check scan status and latest.log.";
+            c.drawCenteredTextWithShadow(textRenderer, emptyMessage, width / 2, top + 24, 0xFFFF7070);
+        }
         for (int i = scroll; i < Math.min(rows.size(), scroll + visible); i++) {
             Row row = rows.get(i);
             int y = top + (i - scroll) * ROW;
@@ -130,7 +149,7 @@ public final class KeybindManagerScreen extends Screen {
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         double x = click.x(), y = click.y();
-        int top = 82, bottom = height - 82;
+        int top = 96, bottom = height - 82;
         if (y >= top && y < bottom && x >= 8 && x < width - 8) {
             int rowIndex = (int) ((y - top) / ROW) + scroll;
             if (rowIndex >= 0 && rowIndex < rows.size()) {
@@ -166,7 +185,7 @@ public final class KeybindManagerScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-        int top = 62, bottom = height - 82;
+        int top = 96, bottom = height - 82;
         int visible = Math.max(1, (bottom - top) / ROW);
         int max = Math.max(0, rows.size() - visible);
         scroll = Math.max(0, Math.min(max, scroll - (int) Math.signum(vertical) * 3));
