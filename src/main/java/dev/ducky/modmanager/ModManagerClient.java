@@ -9,15 +9,36 @@ import org.lwjgl.glfw.GLFW;
 
 public final class ModManagerClient implements ClientModInitializer {
     private static KeyBinding openManagerKey;
-    @Override public void onInitializeClient() {
+    private static boolean initialScanComplete;
+
+    @Override
+    public void onInitializeClient() {
         KeybindStore.load();
-        // Defer reflective keybind discovery until the client has completed startup.
+
         openManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key.modmanager.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, KeyBinding.Category.MISC));
+            "key.modmanager.open",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_RIGHT_SHIFT,
+            KeyBinding.Category.MISC
+        ));
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            KeybindScanner.scanIfNeeded();
-            KeybindStore.reapplySavedBindings();
-            if (openManagerKey.wasPressed() && client.currentScreen == null) client.setScreen(new KeybindManagerScreen(null));
+            // Do not inspect Minecraft's keybind registry during startup.
+            // Wait until a world and player exist, then scan exactly once.
+            if (!initialScanComplete && client.world != null && client.player != null) {
+                initialScanComplete = true;
+                try {
+                    KeybindScanner.scan();
+                    KeybindStore.reapplySavedBindings();
+                } catch (RuntimeException error) {
+                    System.err.println("[Mod Manager] Initial keybind scan failed safely: "
+                        + error.getMessage());
+                }
+            }
+
+            if (openManagerKey.wasPressed() && client.currentScreen == null) {
+                client.setScreen(new KeybindManagerScreen(null));
+            }
         });
     }
 }
