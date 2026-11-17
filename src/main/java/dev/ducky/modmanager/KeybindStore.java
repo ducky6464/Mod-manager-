@@ -45,7 +45,9 @@ public final class KeybindStore {
     public static synchronized void remember(KeyBinding b) {
         String id=b.getId();
         ORIGINAL.putIfAbsent(id,b.getDefaultKey().getCode());
-        SAVED.putIfAbsent(id,boundCode(b));
+        int current = boundCode(b);
+        // Never persist an unknown code: that would overwrite a valid key after a reflection mismatch.
+        if (current >= 0) SAVED.putIfAbsent(id,current);
     }
     public static synchronized void set(KeyBinding b,int code) {
         remember(b); SAVED.put(b.getId(),code);
@@ -58,7 +60,10 @@ public final class KeybindStore {
         boolean changed=false;
         for(KeyBinding b:KeybindScanner.getBindings()) {
             Integer code=SAVED.get(b.getId());
-            if(code!=null && boundCode(b)!=code) { b.setBoundKey(InputUtil.fromKeyCode(new KeyInput(code,0,0))); changed=true; }
+            if(code!=null && code>=0 && boundCode(b)!=code) {
+                b.setBoundKey(InputUtil.fromKeyCode(new KeyInput(code,0,0)));
+                changed=true;
+            }
         }
         if(changed) refreshIndex();
     }
