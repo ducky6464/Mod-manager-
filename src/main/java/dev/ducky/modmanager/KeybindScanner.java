@@ -6,6 +6,7 @@ import java.util.*;
 
 public final class KeybindScanner {
     private static final Map<String,KeyBinding> FOUND=new LinkedHashMap<>();
+    private static int ticksUntilScan;
     private KeybindScanner(){}
     public static synchronized void scan() {
         try {
@@ -21,7 +22,7 @@ public final class KeybindScanner {
         for(KeyBinding b:FOUND.values()) KeybindStore.remember(b);
     }
     private static void collect(Object o){if(o instanceof KeyBinding b) FOUND.put(b.getTranslationKey(),b);}
-    public static synchronized void scanIfNeeded(){ scan(); }
+    public static synchronized void scanIfNeeded(){ if (--ticksUntilScan <= 0) { ticksUntilScan = 40; scan(); } }
     public static synchronized List<KeyBinding> getBindings(){
         List<KeyBinding> out=new ArrayList<>(FOUND.values());
         out.sort(Comparator.comparing(KeyBinding::getTranslationKey,String.CASE_INSENSITIVE_ORDER)); return out;
