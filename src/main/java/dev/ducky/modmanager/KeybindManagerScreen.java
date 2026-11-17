@@ -35,7 +35,9 @@ public final class KeybindManagerScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("Done"),b->close()).dimensions(width-78,bottomY,70,20).build());
     }
     @Override public void render(DrawContext c,int mx,int my,float delta){
-        renderBackground(c,mx,my,delta);
+        // Draw a dim overlay instead of Minecraft's blurred background.
+        // Other rendering handlers may already have used the per-frame blur pass.
+        c.fill(0,0,width,height,0xA0101010);
         c.drawCenteredTextWithShadow(textRenderer,title,width/2,8,0xFFFFFF);
         c.drawTextWithShadow(textRenderer,"Found registered keybinds: "+bindings.size(),10,22,0xAAAAAA);
         c.drawTextWithShadow(textRenderer,"Select a row, then press a key. Scroll to see more.",10,34,0xAAAAAA);
