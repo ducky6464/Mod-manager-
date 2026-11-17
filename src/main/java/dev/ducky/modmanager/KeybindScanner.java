@@ -4,27 +4,59 @@ import net.minecraft.client.option.KeyBinding;
 import java.lang.reflect.*;
 import java.util.*;
 
+/**
+ * Discovers bindings registered with Minecraft's KeyBinding registry.
+ * This intentionally does not inspect arbitrary mod-private key systems.
+ */
 public final class KeybindScanner {
-    private static final Map<String,KeyBinding> FOUND=new LinkedHashMap<>();
+    private static final Map<String, KeyBinding> FOUND = new LinkedHashMap<>();
     private static int ticksUntilScan;
-    private KeybindScanner(){}
+    private KeybindScanner() {}
+
     public static synchronized void scan() {
-        try {
-            for(Field f:KeyBinding.class.getDeclaredFields()) {
-                if(!Modifier.isStatic(f.getModifiers())) continue;
-                if(!Map.class.isAssignableFrom(f.getType())&&!Collection.class.isAssignableFrom(f.getType())&&!f.getType().isArray()) continue;
-                f.setAccessible(true); Object v=f.get(null);
-                if(v instanceof Map<?,?> m){ for(Object x:m.values()) collect(x); for(Object x:m.keySet()) collect(x); }
-                else if(v instanceof Collection<?> c) for(Object x:c) collect(x);
-                else if(v instanceof Object[] a) for(Object x:a) collect(x);
+        for (Field field : KeyBinding.class.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers())) continue;
+            Class<?> type = field.getType();
+            if (!Map.class.isAssignableFrom(type)
+                    && !Collection.class.isAssignableFrom(type)
+                    && !type.isArray()) continue;
+            try {
+                field.setAccessible(true);
+                collectContainer(field.get(null));
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                System.err.println("[Mod Manager] Could not inspect KeyBinding registry field "
+                        + field.getName() + ": " + error.getMessage());
             }
-        } catch(ReflectiveOperationException|RuntimeException e){System.err.println("[Mod Manager] Scan warning: "+e.getMessage());}
-        for(KeyBinding b:FOUND.values()) KeybindStore.remember(b);
+        }
+        for (KeyBinding binding : FOUND.values()) {
+            KeybindStore.remember(binding);
+        }
     }
-    private static void collect(Object o){if(o instanceof KeyBinding b) FOUND.put(b.getId(),b);}
-    public static synchronized void scanIfNeeded(){ if (--ticksUntilScan <= 0) { ticksUntilScan = 40; scan(); } }
-    public static synchronized List<KeyBinding> getBindings(){
-        List<KeyBinding> out=new ArrayList<>(FOUND.values());
-        out.sort(Comparator.comparing(KeyBinding::getId,String.CASE_INSENSITIVE_ORDER)); return out;
+
+    private static void collectContainer(Object value) {
+        if (value == null) return;
+        if (value instanceof KeyBinding binding) {
+            FOUND.put(binding.getId(), binding);
+        } else if (value instanceof Map<?, ?> map) {
+            for (Object item : map.values()) collectContainer(item);
+            for (Object item : map.keySet()) collectContainer(item);
+        } else if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) collectContainer(item);
+        } else if (value instanceof Object[] array) {
+            for (Object item : array) collectContainer(item);
+        }
+    }
+
+    public static synchronized void scanIfNeeded() {
+        if (--ticksUntilScan <= 0) {
+            ticksUntilScan = 40;
+            scan();
+        }
+    }
+
+    public static synchronized List<KeyBinding> getBindings() {
+        List<KeyBinding> result = new ArrayList<>(FOUND.values());
+        result.sort(Comparator.comparing(KeyBinding::getId, String.CASE_INSENSITIVE_ORDER));
+        return result;
     }
 }
