@@ -27,7 +27,7 @@ public final class KeybindManagerScreen extends Screen {
     private record ModInfo(String id, String name, String version) {}
 
     public KeybindManagerScreen(Screen parent) {
-        super(Text.literal("Mod Manager v8"));
+        super(Text.literal("Mod Manager v9"));
         this.parent = parent;
     }
 
@@ -38,7 +38,7 @@ public final class KeybindManagerScreen extends Screen {
 
         int fullWidth = Math.max(120, width - 16);
         infoWidget = addDrawableChild(ButtonWidget.builder(
-            Text.literal("MOD MANAGER v8 | Fabric mods: " + KeybindScanner.getLastModCount()
+            Text.literal("MOD MANAGER v9 | Fabric mods: " + KeybindScanner.getLastModCount()
                 + " | keybinds: " + KeybindScanner.getLastKeybindCount()),
             button -> {}
         ).dimensions(8, 8, fullWidth, 22).build());
@@ -220,7 +220,7 @@ public final class KeybindManagerScreen extends Screen {
             saveMessage = "Fabric Loader returned no installed mods. Check the loader status above.";
         }
 
-        System.err.println("[Mod Manager] V8 UI rows=" + rows.size()
+        System.err.println("[Mod Manager] V9 UI rows=" + rows.size()
             + " FabricMods=" + KeybindScanner.getLastModCount()
             + " Keybinds=" + KeybindScanner.getLastKeybindCount());
     }
@@ -255,7 +255,7 @@ public final class KeybindManagerScreen extends Screen {
         }
         updateMessage();
         if (infoWidget != null) infoWidget.setMessage(Text.literal(
-            "MOD MANAGER v8 | Fabric mods: " + KeybindScanner.getLastModCount()
+            "MOD MANAGER v9 | Fabric mods: " + KeybindScanner.getLastModCount()
                 + " | keybinds: " + KeybindScanner.getLastKeybindCount()));
     }
 
@@ -338,14 +338,7 @@ public final class KeybindManagerScreen extends Screen {
             return;
         }
         Row row = rows.get(selected);
-        String backupResult = BackupStore.restoreLatestMod(row.modId());
-        if (row.binding() != null) {
-            KeybindStore.restore(row.binding());
-            saveMessage = "Minecraft key restored. " + backupResult;
-            clearAndInit();
-            return;
-        }
-        saveMessage = backupResult;
+        saveMessage = BackupStore.restoreLatestMod(row.modId());
         updateMessage();
     }
 
