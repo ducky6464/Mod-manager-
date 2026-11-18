@@ -33,7 +33,7 @@ public final class CorzClientAutoLoader {
     private static final Path SOURCES_FILE = CONFIG_ROOT.resolve("sources.json");
 
     private static final int MAX_PROFILE_BYTES = 16 * 1024 * 1024;
-    private static final int MAX_CLASSES = 2500;
+    private static final int MAX_CLASSES = 3000;
 
     private static final Set<String> ZERO_ARGUMENT_LOADERS = Set.of(
         "loadactiveconfig", "loadactiveprofile", "reloadactiveconfig",
@@ -245,10 +245,14 @@ public final class CorzClientAutoLoader {
         for (String className : classes) {
             try {
                 Class<?> type = Class.forName(className, false, loader);
+                List<Method> discoveredMethods = allMethods(type);
+                boolean hasNamedLoader = discoveredMethods.stream().anyMatch(CorzClientAutoLoader::isPotentialLoadMethod);
+                if (!isConfigClass(type.getName()) && !hasNamedLoader) continue;
+
                 List<Object> owners = findOwners(type);
                 int classScore = classScore(type.getName());
 
-                for (Method method : allMethods(type)) {
+                for (Method method : discoveredMethods) {
                     LoaderCandidate candidate = makeCandidate(method, owners, classScore, profile);
                     if (candidate != null) candidates.add(candidate);
                 }
@@ -341,6 +345,13 @@ public final class CorzClientAutoLoader {
             method.getDeclaringClass().getName() + "#" + method.getName());
     }
 
+    private static boolean isPotentialLoadMethod(Method method) {
+        String name = normalize(method.getName());
+        return (name.startsWith("load") || name.startsWith("reload")
+            || name.startsWith("import") || name.startsWith("apply"))
+            && (name.contains("config") || name.contains("profile") || name.contains("preset"));
+    }
+
     private static int classScore(String className) {
         String name = normalize(className);
         int score = 0;
@@ -353,8 +364,14 @@ public final class CorzClientAutoLoader {
 
     private static List<Object> findOwners(Class<?> type) {
         List<Object> owners = new ArrayList<>();
+        boolean loaderClass = isConfigClass(type.getName())
+            || allMethods(type).stream().anyMatch(CorzClientAutoLoader::isPotentialLoadMethod);
         for (Field field : type.getDeclaredFields()) {
-            if (!Modifier.isStatic(field.getModifiers()) || !isManagerField(field)) continue;
+            String fieldName = normalize(field.getName());
+            boolean singletonField = fieldName.equals("instance") || fieldName.equals("singleton")
+                || fieldName.equals("configmanager") || fieldName.equals("profilemanager");
+            if (!Modifier.isStatic(field.getModifiers())
+                || (!isManagerField(field) && !(loaderClass && singletonField))) continue;
             try {
                 field.setAccessible(true);
                 addOwner(owners, field.get(null));
@@ -368,7 +385,7 @@ public final class CorzClientAutoLoader {
                 || name.equals("getconfigmanager") || name.equals("getprofilemanager")
                 || name.equals("getmanager") || name.equals("getconfig")
                 || name.equals("getstorage"))) continue;
-            if (!hasManagerHint(method.getReturnType().getName())) continue;
+            if (!hasManagerHint(method.getReturnType().getName()) && !loaderClass) continue;
             try {
                 method.setAccessible(true);
                 addOwner(owners, method.invoke(null));
@@ -436,14 +453,19 @@ public final class CorzClientAutoLoader {
 
     private static void collectJarClasses(Path jarPath, Set<String> classes) {
         try (JarFile jar = new JarFile(jarPath.toFile())) {
+            List<String> discovered = new ArrayList<>();
             Enumeration<JarEntry> entries = jar.entries();
-            while (entries.hasMoreElements() && classes.size() < MAX_CLASSES) {
+            while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
                 String name = entry.getName();
-                if (entry.isDirectory() || !name.endsWith(".class")
-                    || name.contains("$") || name.equals("module-info.class")) continue;
-                String className = name.substring(0, name.length() - 6).replace('/', '.');
-                if (isConfigClass(className)) classes.add(className);
+                if (entry.isDirectory() || !name.endsWith(".class") || name.equals("module-info.class")) continue;
+                discovered.add(name.substring(0, name.length() - 6).replace('/', '.'));
+            }
+            discovered.sort(Comparator.comparing((String name) -> !isConfigClass(name))
+                .thenComparing(String::compareTo));
+            for (String name : discovered) {
+                if (classes.size() >= MAX_CLASSES) break;
+                classes.add(name);
             }
         } catch (IOException error) {
             log("Could not inspect CorzClient jar: " + error.getMessage());
@@ -452,20 +474,25 @@ public final class CorzClientAutoLoader {
 
     private static void collectDirectoryClasses(Path root, Set<String> classes) {
         try {
+            List<String> discovered = new ArrayList<>();
             Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), 12,
                 new SimpleFileVisitor<>() {
                     @Override
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                        if (classes.size() >= MAX_CLASSES) return FileVisitResult.TERMINATE;
                         if (!attrs.isRegularFile() || !file.toString().endsWith(".class")
-                            || file.getFileName().toString().contains("$")) return FileVisitResult.CONTINUE;
+                            || file.getFileName().toString().equals("module-info.class")) return FileVisitResult.CONTINUE;
                         String relative = root.relativize(file).toString().replace(File.separatorChar, '/');
                         if (!relative.endsWith(".class")) return FileVisitResult.CONTINUE;
-                        String className = relative.substring(0, relative.length() - 6).replace('/', '.');
-                        if (isConfigClass(className)) classes.add(className);
+                        discovered.add(relative.substring(0, relative.length() - 6).replace('/', '.'));
                         return FileVisitResult.CONTINUE;
                     }
                 });
+            discovered.sort(Comparator.comparing((String name) -> !isConfigClass(name))
+                .thenComparing(String::compareTo));
+            for (String name : discovered) {
+                if (classes.size() >= MAX_CLASSES) break;
+                classes.add(name);
+            }
         } catch (IOException error) {
             log("Could not scan CorzClient classes: " + error.getMessage());
         }
