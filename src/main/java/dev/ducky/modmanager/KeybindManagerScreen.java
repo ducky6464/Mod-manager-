@@ -118,7 +118,7 @@ public final class KeybindManagerScreen extends Screen {
             .dimensions(8, buttonY, 112, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Force Save Selected"), button -> forceSaveSelected())
             .dimensions(124, buttonY, Math.max(110, width - 132), 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"), button -> restore())
+        addDrawableChild(ButtonWidget.builder(Text.literal("Restore Key / Backup"), button -> restore())
             .dimensions(8, buttonY2, 112, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"), button -> forceSaveAll())
             .dimensions(214, buttonY2, 112, 20).build());
@@ -255,7 +255,7 @@ public final class KeybindManagerScreen extends Screen {
         }
         updateMessage();
         if (infoWidget != null) infoWidget.setMessage(Text.literal(
-            "MOD MANAGER v7 | Fabric mods: " + KeybindScanner.getLastModCount()
+            MOD MANAGER v8 | Fabric mods:  + KeybindScanner.getLastModCount()
                 + " | keybinds: " + KeybindScanner.getLastKeybindCount()));
     }
 
@@ -332,14 +332,20 @@ public final class KeybindManagerScreen extends Screen {
     }
 
     private void restore() {
-        if (selected < 0 || selected >= rows.size() || rows.get(selected).binding() == null) {
-            saveMessage = "Select a registered keybind row first.";
+        if (selected < 0 || selected >= rows.size()) {
+            saveMessage = "Select a mod/client row first.";
             updateMessage();
             return;
         }
-        KeybindStore.restore(rows.get(selected).binding());
-        saveMessage = "Selected keybind restored to its default.";
-        clearAndInit();
+        Row row = rows.get(selected);
+        if (row.binding() != null) {
+            KeybindStore.restore(row.binding());
+            saveMessage = "Selected Minecraft keybind restored to its default.";
+            clearAndInit();
+            return;
+        }
+        saveMessage = BackupStore.restoreLatestMod(row.modId());
+        updateMessage();
     }
 
     private void forceSaveSelected() {
