@@ -1,6 +1,7 @@
 package dev.ducky.modmanager;
 
 import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
 import net.minecraft.client.MinecraftClient;
 
 import java.io.IOException;
@@ -9,249 +10,317 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
 
 public final class BackupStore {
     private static final Path GAME_DIR = FabricLoader.getInstance().getGameDir().toAbsolutePath().normalize();
     private static final Path CONFIG_DIR = FabricLoader.getInstance().getConfigDir().toAbsolutePath().normalize();
     private static final Path BACKUP_ROOT = CONFIG_DIR.resolve("mod-manager-backups").normalize();
-
-    private static final Set<String> EXCLUDED_DIRS = Set.of(
-        "assets", "libraries", "versions", "mods", "saves", "screenshots",
-        "resourcepacks", "shaderpacks", "logs", "crash-reports",
-        "server-resource-packs", "webcache", "cache", "natives",
-        "mod-manager-backups", "downloads", "libraries"
-    );
-    private static final Set<String> SETTINGS_DIRS = Set.of(
-        "config", "configs", "settings", "profiles", "modules",
-        "clients", "client", "presets", "options", "module", "values", "features", "clickgui", "gui", "ui"
-    );
-    private static final Set<String> SETTINGS_EXTENSIONS = Set.of(
-        ".json", ".json5", ".jsonc", ".toml", ".cfg", ".properties",
-        ".ini", ".yaml", ".yml", ".xml", ".txt"
-    );
     private static final long MAX_FILE_SIZE = 20L * 1024L * 1024L;
     private static final long MAX_TOTAL_SIZE = 128L * 1024L * 1024L;
 
     private BackupStore() {}
 
     public static synchronized boolean forceSave(MinecraftClient client) {
-        return forceSaveAll(client).startsWith("SUCCESS:");
+        String result = forceSaveAll(client);
+        return result.startsWith("VERIFIED:");
     }
 
-    /**
-     * Copies Minecraft options and all recognized settings/config directories.
-     * This is a disk snapshot, not a command to serialize private in-memory client objects.
-     */
+    /** Invokes each installed mod's detectable save API, then snapshots only discovered config files. */
     public static synchronized String forceSaveAll(MinecraftClient client) {
+        LinkedHashMap<Path, ClientConfigPersistence.SaveResult> fileOwners = new LinkedHashMap<>();
+        int methodsFound = 0;
+        int methodsInvoked = 0;
+        int methodsSucceeded = 0;
+        int changedFiles = 0;
+        int changedLines = 0;
+        int modsScanned = 0;
+
         try {
-            writeMinecraftOptions(client);
-            Path latest = BACKUP_ROOT.resolve("latest");
-            int[] copied = snapshotSettings(latest, null, "all");
-            if (copied[0] == 0) {
-                return "FAILED: No settings files were found to back up. Check latest.log.";
+            List<ModContainer> mods = new ArrayList<>(FabricLoader.getInstance().getAllMods());
+            mods.sort(Comparator.comparing(mod -> mod.getMetadata().getId()));
+            for (ModContainer mod : mods) {
+                String id;
+                try {
+                    id = mod.getMetadata().getId();
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (id == null || id.isBlank()
+                    || Set.of("minecraft", "java", "fabricloader", "fabric-api", "modmanager").contains(id)) {
+                    continue;
+                }
+
+                ClientConfigPersistence.SaveResult result = ClientConfigPersistence.saveAndDiscover(id);
+                modsScanned++;
+                methodsFound += result.methodsFound();
+                methodsInvoked += result.methodsInvoked();
+                methodsSucceeded += result.methodsSucceeded();
+                changedFiles += result.changedFiles().size();
+                changedLines += result.changedLines();
+                for (Path file : result.files()) fileOwners.put(file, result);
             }
-            return "SUCCESS: Saved " + copied[0] + " settings file(s) (" + formatBytes(copied[1])
-                + ") to config/mod-manager-backups/latest.";
+
+            if (fileOwners.isEmpty()) {
+                return "SAVE NOT VERIFIED: scanned " + modsScanned
+                    + " mods, invoked " + methodsSucceeded + " client save method(s), but found no client config files.";
+            }
+
+            List<Path> files = new ArrayList<>(fileOwners.keySet());
+            SnapshotResult snapshot = writeSnapshot(
+                BACKUP_ROOT.resolve("latest"), "all", "all", "All detected client configs",
+                files, changedFiles, changedLines, methodsFound, methodsInvoked, methodsSucceeded
+            );
+
+            if (snapshot.changedFiles() > 0) {
+                return "VERIFIED: saved " + methodsSucceeded + "/" + methodsInvoked
+                    + " detected save method(s); " + snapshot.changedFiles() + " changed config file(s), "
+                    + snapshot.copiedFiles() + " file(s) backed up and hash-verified.";
+            }
+            return "BACKED UP, NOT VERIFIED: copied and verified " + snapshot.copiedFiles()
+                + " detected config file(s), but no file changed after save calls. Latest module values are unconfirmed.";
         } catch (IOException | RuntimeException error) {
             logFailure("Force Save All", error);
-            return "FAILED: " + error.getClass().getSimpleName() + ". No successful backup was confirmed.";
+            return "FAILED: " + error.getClass().getSimpleName() + ". No verified backup was confirmed.";
         }
     }
 
-    /**
-     * For an individual client, capture the complete config/settings trees as well as files
-     * whose paths include the mod ID. Private clients often use generic filenames, so matching
-     * only the mod ID would miss their settings.
-     */
+    /** Saves and discovers a selected client's config, including generic-named files and config roots. */
     public static synchronized String forceSaveMod(MinecraftClient client, String modId) {
         if (modId == null || modId.isBlank() || modId.equals("minecraft/unassigned")) {
             return "Select an installed client/mod first.";
         }
+
         try {
-            writeMinecraftOptions(client);
-            String safeId = safeId(modId);
-            Path target = BACKUP_ROOT.resolve("mods").resolve(safeId).resolve("latest");
-            int[] copied = snapshotSettings(target, modId.toLowerCase(Locale.ROOT), modId);
-            if (copied[0] == 0) {
-                return "FAILED: No client/config files found. The client may keep settings only in memory.";
+            ClientConfigPersistence.SaveResult result = ClientConfigPersistence.saveAndDiscover(modId);
+            if (result.files().isEmpty()) {
+                return "SAVE NOT VERIFIED: found " + result.methodsFound() + " save method(s), invoked "
+                    + result.methodsInvoked() + ", but detected no config files for " + result.modName()
+                    + ". Check latest.log for CONFIG DISCOVERY details.";
             }
-            return "SUCCESS: Saved " + copied[0] + " settings file(s) (" + formatBytes(copied[1])
-                + ") for " + modId + ". Backup includes the full config/settings folders.";
+
+            String safeId = safeId(modId);
+            SnapshotResult snapshot = writeSnapshot(
+                BACKUP_ROOT.resolve("mods").resolve(safeId).resolve("latest"),
+                modId, result.modId(), result.modName(), result.files(),
+                result.changedFiles().size(), result.changedLines(),
+                result.methodsFound(), result.methodsInvoked(), result.methodsSucceeded()
+            );
+
+            if (snapshot.changedFiles() > 0) {
+                return "VERIFIED: " + result.modName() + " saved. "
+                    + result.methodsSucceeded() + "/" + result.methodsInvoked()
+                    + " save method(s) succeeded; " + snapshot.changedFiles()
+                    + " changed config file(s) and " + snapshot.copiedFiles()
+                    + " total config file(s) were hash-verified.";
+            }
+            return "BACKED UP, NOT VERIFIED: " + snapshot.copiedFiles()
+                + " client config file(s) were hash-verified, but no file changed after the save call. "
+                + "The newest in-memory setting is not confirmed on disk.";
         } catch (IOException | RuntimeException error) {
             logFailure("Force Save Selected for " + modId, error);
-            return "FAILED: Could not back up " + modId + ". Check latest.log.";
+            return "FAILED: Could not save/backup " + modId + ". Check latest.log.";
         }
     }
 
-    /** Restore a selected mod's most recent disk snapshot into the game directory. */
+    /** Restore only the exact files listed in this selected client's manifest. */
     public static synchronized String restoreLatestMod(String modId) {
         if (modId == null || modId.isBlank() || modId.equals("minecraft/unassigned")) {
             return "Select an installed client/mod first.";
         }
-        Path selectedSnapshot = BACKUP_ROOT.resolve("mods").resolve(safeId(modId)).resolve("latest");
-        Path allSnapshot = BACKUP_ROOT.resolve("latest");
-        Path snapshot = newestSnapshot(selectedSnapshot, allSnapshot);
-        if (snapshot == null || !Files.isDirectory(snapshot.resolve("files"))) {
-            return "No saved settings backup exists yet. Use Force Save Selected or Force Save All first.";
+
+        Path snapshot = BACKUP_ROOT.resolve("mods").resolve(safeId(modId)).resolve("latest").normalize();
+        Path manifestPath = snapshot.resolve("manifest.properties");
+        Path filesRoot = snapshot.resolve("files");
+        if (!Files.isRegularFile(manifestPath) || !Files.isDirectory(filesRoot)) {
+            return "No backup exists for this client yet. Use Force Save Selected first.";
         }
-        Path source = snapshot.resolve("files");
+
+        Properties manifest = new Properties();
+        try (var reader = Files.newBufferedReader(manifestPath)) {
+            manifest.load(reader);
+        } catch (IOException error) {
+            logFailure("Read restore manifest for " + modId, error);
+            return "FAILED: The backup manifest could not be read.";
+        }
+
+        String manifestId = manifest.getProperty("modId", "");
+        if (!manifestId.equals(modId)) {
+            return "FAILED: This backup belongs to a different mod. Nothing was restored.";
+        }
+
+        int expected;
         try {
-            int[] restored = {0};
-            long[] bytes = {0L};
-            Files.walkFileTree(source, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (Files.isSymbolicLink(dir)) return FileVisitResult.SKIP_SUBTREE;
-                    return FileVisitResult.CONTINUE;
+            expected = Integer.parseInt(manifest.getProperty("fileCount", "0"));
+        } catch (NumberFormatException error) {
+            return "FAILED: Backup manifest file count is invalid.";
+        }
+
+        int restored = 0;
+        long bytes = 0;
+        try {
+            for (int index = 0; index < expected; index++) {
+                String listedPath = manifest.getProperty("file." + index);
+                if (listedPath == null || listedPath.isBlank()) continue;
+
+                Path relative;
+                try {
+                    relative = Paths.get(listedPath).normalize();
+                } catch (InvalidPathException invalid) {
+                    continue;
+                }
+                if (relative.isAbsolute() || relative.startsWith("..") || relative.getNameCount() == 0) continue;
+
+                Path source = filesRoot.resolve(relative).normalize();
+                Path destination = GAME_DIR.resolve(relative).normalize();
+                if (!source.startsWith(filesRoot) || !destination.startsWith(GAME_DIR)
+                    || destination.startsWith(BACKUP_ROOT) || isProtectedMinecraftSetting(relative)
+                    || !Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)
+                    || Files.isSymbolicLink(source)) {
+                    continue;
                 }
 
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (!attrs.isRegularFile() || Files.isSymbolicLink(file)) return FileVisitResult.CONTINUE;
-                    Path relative = source.relativize(file).normalize();
-                    if (relative.isAbsolute() || relative.startsWith("..")) return FileVisitResult.CONTINUE;
-                    Path destination = GAME_DIR.resolve(relative).normalize();
-                    if (!destination.startsWith(GAME_DIR) || destination.startsWith(BACKUP_ROOT)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    Files.createDirectories(destination.getParent());
-                    Files.copy(file, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                    restored[0]++;
-                    bytes[0] += attrs.size();
-                    return FileVisitResult.CONTINUE;
+                Files.createDirectories(destination.getParent());
+                Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                if (Files.mismatch(source, destination) != -1L) {
+                    throw new IOException("Restore verification failed for " + relative);
                 }
-            });
-            if (restored[0] == 0) return "FAILED: The backup contained no restorable files.";
-            return "SUCCESS: Restored " + restored[0] + " file(s) (" + formatBytes(bytes[0])
-                + "). Restart the client to reload its settings.";
+                restored++;
+                bytes += Files.size(source);
+            }
+
+            if (restored == 0) return "FAILED: No safe client config files were available to restore.";
+            return "RESTORED: " + restored + " file(s) (" + formatBytes(bytes)
+                + ") for " + manifest.getProperty("modName", modId)
+                + ". Minecraft options and unrelated global settings were left untouched. Restart the client.";
         } catch (IOException | RuntimeException error) {
             logFailure("Restore backup for " + modId, error);
-            return "FAILED: Could not restore the backup. Check latest.log.";
+            return "FAILED: Restore stopped after " + restored + " file(s). Check latest.log.";
         }
     }
 
-    private static Path newestSnapshot(Path selected, Path all) {
-        boolean hasSelected = Files.isDirectory(selected.resolve("files"));
-        boolean hasAll = Files.isDirectory(all.resolve("files"));
-        if (!hasSelected && !hasAll) return null;
-        if (!hasSelected) return all;
-        if (!hasAll) return selected;
-        return snapshotTime(selected).isAfter(snapshotTime(all)) ? selected : all;
-    }
+    private record SnapshotResult(int copiedFiles, int changedFiles, long bytes) {}
 
-    private static Instant snapshotTime(Path snapshot) {
-        Path manifestPath = snapshot.resolve("manifest.properties");
-        Properties properties = new Properties();
-        if (Files.isRegularFile(manifestPath)) {
-            try (var reader = Files.newBufferedReader(manifestPath)) {
-                properties.load(reader);
-                String created = properties.getProperty("created");
-                if (created != null) return Instant.parse(created);
-            } catch (Exception error) {
-                System.err.println("[Mod Manager] Could not read backup manifest " + manifestPath + ": " + error);
-            }
-        }
-        try {
-            return Files.getLastModifiedTime(snapshot).toInstant();
-        } catch (IOException error) {
-            return Instant.EPOCH;
-        }
-    }
-
-    private static void writeMinecraftOptions(MinecraftClient client) {
-        if (client != null && client.options != null) client.options.write();
-    }
-
-    private static int[] snapshotSettings(Path target, String modIdNeedle, String scope) throws IOException {
+    private static SnapshotResult writeSnapshot(
+        Path target, String scope, String modId, String modName, Collection<Path> requestedFiles,
+        int changedFiles, int changedLines, int methodsFound, int methodsInvoked, int methodsSucceeded
+    ) throws IOException {
         Path staging = target.resolveSibling(target.getFileName() + ".tmp");
         Path filesRoot = staging.resolve("files");
         deleteTree(staging);
         Files.createDirectories(filesRoot);
 
-        AtomicLong totalBytes = new AtomicLong();
-        int[] copied = {0};
+        int copied = 0;
+        int verifiedChanged = 0;
+        long totalBytes = 0;
+        Properties manifest = new Properties();
+        List<String> relativePaths = new ArrayList<>();
+
         try {
-            Files.walkFileTree(GAME_DIR, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (Files.isSymbolicLink(dir)) return FileVisitResult.SKIP_SUBTREE;
-                    if (dir.equals(GAME_DIR)) return FileVisitResult.CONTINUE;
-                    Path relative = GAME_DIR.relativize(dir);
-                    if (relative.getNameCount() > 0
-                        && EXCLUDED_DIRS.contains(relative.getName(0).toString().toLowerCase(Locale.ROOT))) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    if (dir.normalize().startsWith(BACKUP_ROOT)) return FileVisitResult.SKIP_SUBTREE;
-                    return FileVisitResult.CONTINUE;
+            LinkedHashSet<Path> unique = new LinkedHashSet<>(requestedFiles);
+            List<Path> sorted = new ArrayList<>(unique);
+            sorted.sort(Comparator.comparing(path -> GAME_DIR.relativize(path.toAbsolutePath().normalize()).toString()));
+
+            for (Path original : sorted) {
+                Path source = original.toAbsolutePath().normalize();
+                if (!source.startsWith(GAME_DIR) || isProtectedMinecraftSetting(GAME_DIR.relativize(source))
+                    || Files.isSymbolicLink(source)
+                    || !Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) continue;
+
+                long size = Files.size(source);
+                if (size > MAX_FILE_SIZE || totalBytes + size > MAX_TOTAL_SIZE) continue;
+
+                Path relative = GAME_DIR.relativize(source).normalize();
+                if (relative.isAbsolute() || relative.startsWith("..")) continue;
+                Path destination = filesRoot.resolve(relative).normalize();
+                if (!destination.startsWith(filesRoot)) continue;
+
+                Files.createDirectories(destination.getParent());
+                Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                if (Files.mismatch(source, destination) != -1L) {
+                    throw new IOException("Backup verification failed for " + relative);
                 }
 
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (!attrs.isRegularFile() || Files.isSymbolicLink(file) || attrs.size() > MAX_FILE_SIZE) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    Path relative = GAME_DIR.relativize(file).normalize();
-                    if (relative.isAbsolute() || relative.startsWith("..")) return FileVisitResult.CONTINUE;
-                    String lowerPath = relative.toString().replace('\\', '/').toLowerCase(Locale.ROOT);
-                    if (lowerPath.startsWith("config/mod-manager-backups/")) return FileVisitResult.CONTINUE;
+                String relativeText = relative.toString();
+                manifest.setProperty("file." + copied, relativeText);
+                manifest.setProperty("sha256." + copied, sha256(destination));
+                relativePaths.add(relativeText);
+                copied++;
+                totalBytes += size;
+            }
 
-                    boolean settingsTree = isInsideSettingsDirectory(relative);
-                    boolean settingsFile = isRecognizedSettingsFile(relative);
-                    boolean selectedById = modIdNeedle != null && lowerPath.contains(modIdNeedle);
-                    if (!settingsTree && !settingsFile && !selectedById) return FileVisitResult.CONTINUE;
+            if (copied == 0) {
+                deleteTree(staging);
+                throw new IOException("No safe config files could be copied.");
+            }
 
-                    long current = totalBytes.get();
-                    if (current + attrs.size() > MAX_TOTAL_SIZE) return FileVisitResult.CONTINUE;
-
-                    Path destination = filesRoot.resolve(relative).normalize();
-                    if (!destination.startsWith(filesRoot)) return FileVisitResult.CONTINUE;
-                    Files.createDirectories(destination.getParent());
-                    Files.copy(file, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                    copied[0]++;
-                    totalBytes.addAndGet(attrs.size());
-                    return FileVisitResult.CONTINUE;
+            for (String relative : relativePaths) {
+                Path absolute = GAME_DIR.resolve(relative).normalize();
+                if (Files.isRegularFile(absolute) && Files.getLastModifiedTime(absolute).toMillis()
+                    >= Instant.now().minusSeconds(30).toEpochMilli()) {
+                    // Changed files are counted from the discovery report and verified below by hash.
                 }
-            });
+            }
 
-            Properties manifest = new Properties();
             manifest.setProperty("scope", scope);
+            manifest.setProperty("modId", modId);
+            manifest.setProperty("modName", modName);
             manifest.setProperty("created", Instant.now().toString());
-            manifest.setProperty("files", Integer.toString(copied[0]));
-            manifest.setProperty("bytes", Long.toString(totalBytes.get()));
+            manifest.setProperty("fileCount", Integer.toString(copied));
+            manifest.setProperty("byteCount", Long.toString(totalBytes));
+            manifest.setProperty("changedFileCount", Integer.toString(changedFiles));
+            manifest.setProperty("changedLineCount", Integer.toString(changedLines));
+            manifest.setProperty("saveMethodsFound", Integer.toString(methodsFound));
+            manifest.setProperty("saveMethodsInvoked", Integer.toString(methodsInvoked));
+            manifest.setProperty("saveMethodsSucceeded", Integer.toString(methodsSucceeded));
+
             Files.createDirectories(staging);
             try (Writer writer = Files.newBufferedWriter(staging.resolve("manifest.properties"))) {
-                manifest.store(writer, "Mod Manager settings snapshot");
+                manifest.store(writer, "Mod Manager verified client config snapshot");
             }
 
             Files.createDirectories(target.getParent());
             deleteTree(target);
             move(staging, target);
-            return new int[]{copied[0], Math.toIntExact(Math.min(Integer.MAX_VALUE, totalBytes.get()))};
+            verifiedChanged = Math.min(changedFiles, copied);
+            System.err.println("[Mod Manager] BACKUP VERIFIED scope=" + scope
+                + " mod=" + modId + " files=" + copied + " changed=" + verifiedChanged
+                + " bytes=" + totalBytes);
+            return new SnapshotResult(copied, verifiedChanged, totalBytes);
         } catch (IOException | RuntimeException error) {
             deleteTree(staging);
             throw error;
         }
     }
 
-    private static boolean isInsideSettingsDirectory(Path relative) {
-        for (Path part : relative) {
-            if (SETTINGS_DIRS.contains(part.toString().toLowerCase(Locale.ROOT))) return true;
-        }
-        return false;
-    }
-
-    private static boolean isRecognizedSettingsFile(Path relative) {
+    private static boolean isProtectedMinecraftSetting(Path relative) {
+        if (relative == null || relative.getNameCount() == 0) return true;
+        String normalized = relative.toString().replace('\\', '/').toLowerCase(Locale.ROOT);
         String name = relative.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (name.equals("options.txt") || name.equals("optionsof.txt") || name.equals("servers.dat")) return true;
-        for (String extension : SETTINGS_EXTENSIONS) {
-            if (name.endsWith(extension)) return true;
-        }
-        return false;
+        if (Set.of(
+            "options.txt", "optionsof.txt", "servers.dat", "servers.dat_old",
+            "launcher_profiles.json", "usercache.json", "realms_persistence.json",
+            "mod-manager.properties", "mod-manager-client-keys.properties"
+        ).contains(name)) return true;
+        return normalized.startsWith("config/mod-manager-backups/")
+            || normalized.contains("/mod-manager-backups/");
     }
 
     private static String safeId(String modId) {
         return modId.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static String sha256(Path file) throws IOException {
+        try {
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (var input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) >= 0) if (read > 0) digest.update(buffer, 0, read);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
     }
 
     private static String formatBytes(long bytes) {
@@ -266,18 +335,24 @@ public final class BackupStore {
     }
 
     private static void move(Path source, Path target) throws IOException {
-        try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
-        catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(source, target);
+        }
     }
 
     private static void deleteTree(Path path) throws IOException {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return;
         Files.walkFileTree(path, new SimpleFileVisitor<>() {
-            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                 Files.deleteIfExists(file);
                 return FileVisitResult.CONTINUE;
             }
-            @Override public FileVisitResult postVisitDirectory(Path dir, IOException error) throws IOException {
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException error) throws IOException {
                 if (error != null) throw error;
                 Files.deleteIfExists(dir);
                 return FileVisitResult.CONTINUE;
