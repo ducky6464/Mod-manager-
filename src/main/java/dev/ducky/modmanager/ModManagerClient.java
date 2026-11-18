@@ -11,6 +11,7 @@ import org.lwjgl.glfw.GLFW;
 public final class ModManagerClient implements ClientModInitializer {
     private static KeyBinding openManagerKey;
     private static boolean initialScanComplete;
+    private static Object lastJoinedWorld;
 
     @Override
     public void onInitializeClient() {
@@ -27,6 +28,16 @@ public final class ModManagerClient implements ClientModInitializer {
         CustomClientKeybinds.load();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             CustomClientKeybinds.tick(client);
+
+            if (client.world == null || client.player == null) {
+                lastJoinedWorld = null;
+            } else if (client.world != lastJoinedWorld) {
+                // A different ClientWorld means a new world/server connection.
+                // Set the latch before calling the adapter so failures are not retried every tick.
+                lastJoinedWorld = client.world;
+                CorzClientAutoLoader.loadSelectedProfile();
+            }
+
             if (!initialScanComplete && client.world != null && client.player != null) {
                 try {
                     KeybindScanner.scan();
