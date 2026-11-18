@@ -1,8 +1,8 @@
-name: Build Mod Manager v8
+name: Build Mod Manager v9
 
 on:
   push:
-    branches: [main, 'fix/v5-visible-diagnostics', 'fix/v6-visible-empty-state', 'fix/v8-custom-client-key-remap', 'fix/v8-force-save-settings']
+    branches: [main, 'fix/v5-visible-diagnostics', 'fix/v6-visible-empty-state', 'fix/v8-custom-client-key-remap', 'fix/v8-force-save-settings', 'fix/v9-client-config-persistence']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,22 +26,23 @@ jobs:
       - name: Clean and build
         run: gradle clean build
 
-      - name: Verify exact v8 JAR and embedded mod metadata
+      - name: Verify exact v9 JAR and embedded mod metadata
         shell: bash
         run: |
           set -euo pipefail
-          JAR="build/libs/mod-manager-v8-0.1.0.jar"
+          JAR="build/libs/mod-manager-v9-0.1.0.jar"
           test -f "$JAR"
           jar tf "$JAR" | grep -F 'dev/ducky/modmanager/KeybindManagerScreen.class'
           jar tf "$JAR" | grep -F 'dev/ducky/modmanager/BackupStore.class'
+          jar tf "$JAR" | grep -F 'dev/ducky/modmanager/ClientConfigPersistence.class'
           jar tf "$JAR" | grep -F 'dev/ducky/modmanager/CustomClientKeybinds.class'
-          unzip -p "$JAR" fabric.mod.json | grep -F '"name": "Mod Manager v8"'
+          unzip -p "$JAR" fabric.mod.json | grep -F '"name": "Mod Manager v9"'
           echo "Verified artifact: $JAR"
           sha256sum "$JAR"
 
-      - name: Upload v8 mod JAR only
+      - name: Upload v9 mod JAR only
         uses: actions/upload-artifact@v4
         with:
-          name: mod-manager-v8-1.21.11
-          path: build/libs/mod-manager-v8-0.1.0.jar
+          name: mod-manager-v9-1.21.11
+          path: build/libs/mod-manager-v9-0.1.0.jar
           if-no-files-found: error
