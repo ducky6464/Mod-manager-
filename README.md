@@ -29,7 +29,8 @@ A client-side Fabric mod for Minecraft **1.21.11**.
 - **Force Save Selected** now snapshots the complete `config` folder plus recognized client/settings/profile/module folders, not only files whose names contain the mod ID. It also includes matching files elsewhere under the game directory.
 - **Force Save All** captures the same recognized settings locations and Minecraft options.
 - Snapshots are stored under `config/mod-manager-backups`; each contains a manifest with its timestamp, file count, and byte count.
-- For a selected mod row without a Minecraft keybind, **Restore Key / Backup** restores that mod's latest saved snapshot into the game directory. Restart the client to reload restored settings.
+- A final full settings snapshot is also taken from a JVM shutdown hook after Minecraft lifecycle callbacks, to catch settings files that clients flush during shutdown.
+- **Restore Key / Backup** restores the newest available snapshot (selected-mod snapshot or final full snapshot) into the game directory. Restart the client to reload restored settings.
 - Files are copied from disk. The manager cannot force an arbitrary private client to serialize settings that exist only in memory, use a custom encrypted store, or write outside the game directory. For that case, a client-specific save adapter is required.
 
 ## Compatibility limits
