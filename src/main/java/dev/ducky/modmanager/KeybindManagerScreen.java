@@ -17,6 +17,8 @@ public final class KeybindManagerScreen extends Screen {
     private int page = 0;
     private int rowsPerPage = 1;
     private boolean waiting;
+    private int customCaptureStage = 0;
+    private int capturedOriginalKey = -1;
     private String saveMessage = "Select a mod row. Rows are real Minecraft widgets.";
     private ButtonWidget infoWidget;
     private ButtonWidget messageWidget;
@@ -25,7 +27,7 @@ public final class KeybindManagerScreen extends Screen {
     private record ModInfo(String id, String name, String version) {}
 
     public KeybindManagerScreen(Screen parent) {
-        super(Text.literal("Mod Manager v7"));
+        super(Text.literal("Mod Manager v8"));
         this.parent = parent;
     }
 
@@ -36,7 +38,7 @@ public final class KeybindManagerScreen extends Screen {
 
         int fullWidth = Math.max(120, width - 16);
         infoWidget = addDrawableChild(ButtonWidget.builder(
-            Text.literal("MOD MANAGER v7 | Fabric mods: " + KeybindScanner.getLastModCount()
+            Text.literal("MOD MANAGER v8 | Fabric mods: " + KeybindScanner.getLastModCount()
                 + " | keybinds: " + KeybindScanner.getLastKeybindCount()),
             button -> {}
         ).dimensions(8, 8, fullWidth, 22).build());
@@ -69,11 +71,15 @@ public final class KeybindManagerScreen extends Screen {
                 final int rowIndex = index;
                 Row row = rows.get(index);
                 String label = row.modName() + " [" + row.modId() + "] " + row.version();
+                CustomClientKeybinds.Mapping custom = CustomClientKeybinds.get(row.modId());
                 if (row.binding() == null) {
-                    label += " | No registered keybind";
+                    label += " | No Minecraft keybind";
                 } else {
                     label += " | " + row.binding().getId() + " = "
                         + row.binding().getBoundKeyLocalizedText().getString();
+                }
+                if (custom != null) {
+                    label += " | Client GUI remap: " + custom.replacementKey();
                 }
                 if (selected == index) label = "> " + label;
                 ButtonWidget rowButton = addDrawableChild(ButtonWidget.builder(
@@ -108,12 +114,14 @@ public final class KeybindManagerScreen extends Screen {
 
         int buttonY = height - 78;
         int buttonY2 = height - 52;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"), button -> restore())
+        addDrawableChild(ButtonWidget.builder(Text.literal("Set Client GUI Key"), button -> beginCustomCapture())
             .dimensions(8, buttonY, 112, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Force Save Selected"), button -> forceSaveSelected())
             .dimensions(124, buttonY, Math.max(110, width - 132), 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"), button -> forceSaveAll())
+        addDrawableChild(ButtonWidget.builder(Text.literal("Restore default"), button -> restore())
             .dimensions(8, buttonY2, 112, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Force Save All"), button -> forceSaveAll())
+            .dimensions(214, buttonY2, 112, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Rescan"), button -> {
             selected = -1;
             page = 0;
@@ -212,7 +220,7 @@ public final class KeybindManagerScreen extends Screen {
             saveMessage = "Fabric Loader returned no installed mods. Check the loader status above.";
         }
 
-        System.err.println("[Mod Manager] V7 UI rows=" + rows.size()
+        System.err.println("[Mod Manager] V8 UI rows=" + rows.size()
             + " FabricMods=" + KeybindScanner.getLastModCount()
             + " Keybinds=" + KeybindScanner.getLastKeybindCount());
     }
@@ -240,7 +248,7 @@ public final class KeybindManagerScreen extends Screen {
         Row row = rows.get(index);
         if (row.binding() == null) {
             waiting = false;
-            saveMessage = "Selected " + row.modId() + ". This mod has no Minecraft-registered keybind.";
+            saveMessage = "Selected " + row.modId() + ". Use Set Client GUI Key to remap its existing shortcut.";
         } else {
             waiting = true;
             saveMessage = "Selected " + row.modId() + ". Press a key now. ESC cancels.";
@@ -255,9 +263,46 @@ public final class KeybindManagerScreen extends Screen {
         if (messageWidget != null) messageWidget.setMessage(Text.literal(trim(saveMessage, width - 32)));
     }
 
+    private void beginCustomCapture() {
+        if (selected < 0 || selected >= rows.size()) {
+            saveMessage = "Select a client/mod row first.";
+            updateMessage();
+            return;
+        }
+        customCaptureStage = 1;
+        waiting = false;
+        saveMessage = "Step 1/2: Press the client's CURRENT GUI key.";
+        updateMessage();
+    }
+
     @Override
     public boolean keyPressed(KeyInput input) {
         int key = input.key();
+        if (customCaptureStage == 1) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) {
+                customCaptureStage = 0;
+                saveMessage = "Client key remapping cancelled.";
+            } else {
+                capturedOriginalKey = key;
+                customCaptureStage = 2;
+                saveMessage = "Step 2/2: Press the NEW key you want to use.";
+            }
+            updateMessage();
+            return true;
+        }
+        if (customCaptureStage == 2) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) {
+                customCaptureStage = 0;
+                saveMessage = "Client key remapping cancelled.";
+            } else if (selected >= 0 && selected < rows.size()) {
+                CustomClientKeybinds.set(rows.get(selected).modId(), capturedOriginalKey, key);
+                customCaptureStage = 0;
+                saveMessage = "Saved client GUI remap. New key forwards the old shortcut while in-game.";
+                clearAndInit();
+            }
+            updateMessage();
+            return true;
+        }
         if (waiting) {
             if (key == GLFW.GLFW_KEY_ESCAPE) {
                 waiting = false;
@@ -333,8 +378,9 @@ public final class KeybindManagerScreen extends Screen {
 
     @Override
     public void close() {
-        if (waiting) {
+        if (waiting || customCaptureStage != 0) {
             waiting = false;
+            customCaptureStage = 0;
             saveMessage = "Key assignment cancelled.";
             updateMessage();
             return;
