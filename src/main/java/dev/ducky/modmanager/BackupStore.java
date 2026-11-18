@@ -179,6 +179,10 @@ public final class BackupStore {
                     continue;
                 }
 
+                String expectedHash = manifest.getProperty("sha256." + index, "");
+                if (expectedHash.isBlank() || !sha256(source).equals(expectedHash)) {
+                    throw new IOException("Backup hash check failed for " + relative);
+                }
                 Files.createDirectories(destination.getParent());
                 Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
                 if (Files.mismatch(source, destination) != -1L) {
