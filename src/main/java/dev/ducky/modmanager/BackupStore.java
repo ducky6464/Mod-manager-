@@ -24,11 +24,11 @@ public final class BackupStore {
     );
     private static final Set<String> SETTINGS_DIRS = Set.of(
         "config", "configs", "settings", "profiles", "modules",
-        "clients", "client", "presets", "options"
+        "clients", "client", "presets", "options", "module", "values", "features", "clickgui", "gui", "ui"
     );
     private static final Set<String> SETTINGS_EXTENSIONS = Set.of(
         ".json", ".json5", ".jsonc", ".toml", ".cfg", ".properties",
-        ".ini", ".yaml", ".yml", ".xml"
+        ".ini", ".yaml", ".yml", ".xml", ".txt"
     );
     private static final long MAX_FILE_SIZE = 20L * 1024L * 1024L;
     private static final long MAX_TOTAL_SIZE = 128L * 1024L * 1024L;
