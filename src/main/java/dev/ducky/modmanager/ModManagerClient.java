@@ -16,6 +16,16 @@ public final class ModManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         KeybindStore.load();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> BackupStore.forceSave(client));
+        // Final disk snapshot runs after Minecraft's lifecycle callbacks, allowing client configs
+        // that flush during shutdown to be included in the backup.
+        try {
+            Runtime.getRuntime().addShutdownHook(new Thread(
+                () -> BackupStore.forceSaveAll(null),
+                "mod-manager-final-settings-backup"
+            ));
+        } catch (IllegalStateException error) {
+            System.err.println("[Mod Manager] Could not register final settings backup hook: " + error);
+        }
 
         openManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.modmanager.open",
