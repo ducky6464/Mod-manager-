@@ -89,10 +89,13 @@ public final class BackupStore {
         if (modId == null || modId.isBlank() || modId.equals("minecraft/unassigned")) {
             return "Select an installed client/mod first.";
         }
-        Path source = BACKUP_ROOT.resolve("mods").resolve(safeId(modId)).resolve("latest").resolve("files");
-        if (!Files.isDirectory(source)) {
-            return "No saved backup exists for " + modId + ". Use Force Save Selected first.";
+        Path selectedSnapshot = BACKUP_ROOT.resolve("mods").resolve(safeId(modId)).resolve("latest");
+        Path allSnapshot = BACKUP_ROOT.resolve("latest");
+        Path snapshot = newestSnapshot(selectedSnapshot, allSnapshot);
+        if (snapshot == null || !Files.isDirectory(snapshot.resolve("files"))) {
+            return "No saved settings backup exists yet. Use Force Save Selected or Force Save All first.";
         }
+        Path source = snapshot.resolve("files");
         try {
             int[] restored = {0};
             long[] bytes = {0L};
@@ -125,6 +128,34 @@ public final class BackupStore {
         } catch (IOException | RuntimeException error) {
             logFailure("Restore backup for " + modId, error);
             return "FAILED: Could not restore the backup. Check latest.log.";
+        }
+    }
+
+    private static Path newestSnapshot(Path selected, Path all) {
+        boolean hasSelected = Files.isDirectory(selected.resolve("files"));
+        boolean hasAll = Files.isDirectory(all.resolve("files"));
+        if (!hasSelected && !hasAll) return null;
+        if (!hasSelected) return all;
+        if (!hasAll) return selected;
+        return snapshotTime(selected).isAfter(snapshotTime(all)) ? selected : all;
+    }
+
+    private static Instant snapshotTime(Path snapshot) {
+        Path manifestPath = snapshot.resolve("manifest.properties");
+        Properties properties = new Properties();
+        if (Files.isRegularFile(manifestPath)) {
+            try (var reader = Files.newBufferedReader(manifestPath)) {
+                properties.load(reader);
+                String created = properties.getProperty("created");
+                if (created != null) return Instant.parse(created);
+            } catch (Exception error) {
+                System.err.println("[Mod Manager] Could not read backup manifest " + manifestPath + ": " + error);
+            }
+        }
+        try {
+            return Files.getLastModifiedTime(snapshot).toInstant();
+        } catch (IOException error) {
+            return Instant.EPOCH;
         }
     }
 
