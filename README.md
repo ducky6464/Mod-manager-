@@ -1,4 +1,4 @@
-# Mod Manager v7
+# Mod Manager v8
 
 A client-side Fabric mod for Minecraft **1.21.11**.
 
@@ -26,9 +26,11 @@ A client-side Fabric mod for Minecraft **1.21.11**.
 
 ## Force-save behavior
 
-- **Force Save Selected** is best-effort. It backs up config files whose relative path or filename contains the selected mod ID to `config/mod-manager-backups/mods/<modid>/latest`. If the mod uses a generic filename or stores settings elsewhere, the manager may not identify those files.
-- **Force Save All** asks Minecraft to write its options, then snapshots small settings/config files under the game directory to `config/mod-manager-backups/latest`. It excludes worlds, mods, assets, resource packs, logs, and other large game data.
-- A backup is a copy of files currently on disk. It cannot force a private client to serialize settings that exist only in memory, use encryption, or use an unknown storage location.
+- **Force Save Selected** now snapshots the complete `config` folder plus recognized client/settings/profile/module folders, not only files whose names contain the mod ID. It also includes matching files elsewhere under the game directory.
+- **Force Save All** captures the same recognized settings locations and Minecraft options.
+- Snapshots are stored under `config/mod-manager-backups`; each contains a manifest with its timestamp, file count, and byte count.
+- For a selected mod row without a Minecraft keybind, **Restore Key / Backup** restores that mod's latest saved snapshot into the game directory. Restart the client to reload restored settings.
+- Files are copied from disk. The manager cannot force an arbitrary private client to serialize settings that exist only in memory, use a custom encrypted store, or write outside the game directory. For that case, a client-specific save adapter is required.
 
 ## Compatibility limits
 
