@@ -261,8 +261,8 @@ public final class ClientConfigPersistence {
     }
 
     private static boolean changed(Fingerprint before, Fingerprint after) {
-        return before == null || !before.hash().equals(after.hash())
-            || before.size() != after.size() || before.modified() != after.modified();
+        // A timestamp-only rewrite is not proof that the setting value changed.
+        return before == null || !before.hash().equals(after.hash()) || before.size() != after.size();
     }
 
     private static int countAddedLines(String oldText, String newText) {
