@@ -24,7 +24,9 @@ public final class ModManagerClient implements ClientModInitializer {
             KeyBinding.Category.MISC
         ));
 
+        CustomClientKeybinds.load();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            CustomClientKeybinds.tick(client);
             if (!initialScanComplete && client.world != null && client.player != null) {
                 try {
                     KeybindScanner.scan();
