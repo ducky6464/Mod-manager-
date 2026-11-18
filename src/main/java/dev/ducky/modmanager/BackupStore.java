@@ -102,7 +102,7 @@ public final class BackupStore {
             SnapshotResult snapshot = writeSnapshot(
                 BACKUP_ROOT.resolve("mods").resolve(safeId).resolve("latest"),
                 modId, result.modId(), result.modName(), result.files(),
-                result.changedFiles().size(), result.changedLines(),
+                result.changedFiles(), result.changedLines(),
                 result.methodsFound(), result.methodsInvoked(), result.methodsSucceeded()
             );
 
