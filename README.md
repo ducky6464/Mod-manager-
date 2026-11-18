@@ -1,4 +1,4 @@
-# Mod Manager v9
+# Mod Manager v10
 
 Client-side Fabric mod for Minecraft 1.21.11.
 
@@ -11,6 +11,20 @@ Client-side Fabric mod for Minecraft 1.21.11.
 - Force Save All repeats the save/discovery process for installed mods.
 - Restore Key / Backup restores only the selected mod's exact manifest-listed files.
 
+## CorzClient one-shot world-join loading
+
+- On each new client world/server connection, Mod Manager checks config/corzclient/active.txt.
+- The selected profile must be registered as LOCAL in sources.json and must be a valid .corz.json file containing the content.modules object.
+- If the selected profile is missing or invalid, Mod Manager chooses the newest valid remaining LOCAL profile, writes its name to active.txt, and uses that profile.
+- A newly selected profile is noticed on the next world join because the selection and registry are read fresh for each connection.
+- The load attempt is latched once per ClientWorld. It is not run every tick and is reset after disconnecting.
+- The adapter looks for a narrowly named CorzClient load/profile API using Corz's config/profile classes. It supports methods that accept a profile name, a profile path/file, or methods explicitly named to load the active profile.
+- Mod Manager does not overwrite CorzClient's live settings JSON. Replacing that file alone would not guarantee that Corz's already-loaded in-memory module objects are updated.
+
+## Important compatibility limit
+
+CorzClient is a private client and its JAR was not available for source-level inspection or runtime testing during this build. The adapter can only call a load method whose class and method names/signature it can identify. If Corz uses obfuscated names, a different method signature, or a load path outside these recognized forms, the adapter will report that it could not find the API rather than claiming the profile was loaded. A successful Gradle build proves compilation and packaging, not that a particular CorzClient release exposes a matching loader method. Runtime logs use the [Mod Manager] Corz Auto-Load: prefix.
+
 ## Client configuration persistence
 
 - The manager inspects the selected mod's own JAR/directory for classes associated with config, settings, modules, keybinds, profiles, storage, and client data.
@@ -20,10 +34,6 @@ Client-side Fabric mod for Minecraft 1.21.11.
 - Each backup contains a manifest with the exact relative file paths, hashes, save-method counts, changed-file count, and timestamp. The copied files are compared byte-for-byte with their source files.
 - Restore uses only paths in the selected client's manifest. It does not restore options.txt, optionsof.txt, servers.dat, launcher profiles, or Mod Manager's own files, and it does not restore the all-mods snapshot over a selected client.
 - The manager reports VERIFIED only when it detects changed client config files and the backup copies verify. If a client exposes no detectable save method or no changed config file is found, the result says NOT VERIFIED instead of claiming the live settings were saved.
-
-## Compatibility limits
-
-There is no universal API for private Minecraft clients. A client may encrypt its config, keep state in memory, write outside the game directory, use obfuscated save methods, or serialize through code that cannot safely be identified by reflection. In those cases, Mod Manager reports the limitation and a client-specific adapter or inspection of that client's JAR is required. A successful Gradle build confirms compilation and artifact packaging, not runtime compatibility with every client.
 
 ## Diagnostics
 
