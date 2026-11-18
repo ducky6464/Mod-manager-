@@ -1,8 +1,8 @@
-name: Build Mod Manager v7
+name: Build Mod Manager v8
 
 on:
   push:
-    branches: [main, 'fix/v5-visible-diagnostics', 'fix/v6-visible-empty-state', 'fix/v7-widget-based-mod-list']
+    branches: [main, 'fix/v5-visible-diagnostics', 'fix/v6-visible-empty-state', 'fix/v8-widget-based-mod-list']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,20 +26,20 @@ jobs:
       - name: Clean and build
         run: gradle clean build
 
-      - name: Verify exact v7 JAR and embedded mod metadata
+      - name: Verify exact v8 JAR and embedded mod metadata
         shell: bash
         run: |
           set -euo pipefail
-          JAR="build/libs/mod-manager-v7-0.1.0.jar"
+          JAR="build/libs/mod-manager-v8-0.1.0.jar"
           test -f "$JAR"
           jar tf "$JAR" | grep -F 'dev/ducky/modmanager/KeybindManagerScreen.class'
-          unzip -p "$JAR" fabric.mod.json | grep -F '"name": "Mod Manager v7"'
+          unzip -p "$JAR" fabric.mod.json | grep -F '"name": "Mod Manager v8"'
           echo "Verified artifact: $JAR"
           sha256sum "$JAR"
 
-      - name: Upload v7 mod JAR only
+      - name: Upload v8 mod JAR only
         uses: actions/upload-artifact@v4
         with:
-          name: mod-manager-v7-1.21.11
-          path: build/libs/mod-manager-v7-0.1.0.jar
+          name: mod-manager-v8-1.21.11
+          path: build/libs/mod-manager-v8-0.1.0.jar
           if-no-files-found: error
