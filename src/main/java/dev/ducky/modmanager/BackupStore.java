@@ -31,7 +31,7 @@ public final class BackupStore {
         int methodsFound = 0;
         int methodsInvoked = 0;
         int methodsSucceeded = 0;
-        int changedFiles = 0;
+        LinkedHashSet<Path> changedPaths = new LinkedHashSet<>();
         int changedLines = 0;
         int modsScanned = 0;
 
@@ -55,7 +55,7 @@ public final class BackupStore {
                 methodsFound += result.methodsFound();
                 methodsInvoked += result.methodsInvoked();
                 methodsSucceeded += result.methodsSucceeded();
-                changedFiles += result.changedFiles().size();
+                changedPaths.addAll(result.changedFiles());
                 changedLines += result.changedLines();
                 for (Path file : result.files()) fileOwners.put(file, result);
             }
@@ -68,7 +68,7 @@ public final class BackupStore {
             List<Path> files = new ArrayList<>(fileOwners.keySet());
             SnapshotResult snapshot = writeSnapshot(
                 BACKUP_ROOT.resolve("latest"), "all", "all", "All detected client configs",
-                files, changedFiles, changedLines, methodsFound, methodsInvoked, methodsSucceeded
+                files, changedPaths, changedLines, methodsFound, methodsInvoked, methodsSucceeded
             );
 
             if (snapshot.changedFiles() > 0) {
@@ -202,7 +202,7 @@ public final class BackupStore {
 
     private static SnapshotResult writeSnapshot(
         Path target, String scope, String modId, String modName, Collection<Path> requestedFiles,
-        int changedFiles, int changedLines, int methodsFound, int methodsInvoked, int methodsSucceeded
+        Collection<Path> changedPaths, int changedLines, int methodsFound, int methodsInvoked, int methodsSucceeded
     ) throws IOException {
         Path staging = target.resolveSibling(target.getFileName() + ".tmp");
         Path filesRoot = staging.resolve("files");
@@ -246,19 +246,12 @@ public final class BackupStore {
                 relativePaths.add(relativeText);
                 copied++;
                 totalBytes += size;
+                if (changedPaths.contains(source)) verifiedChanged++;
             }
 
             if (copied == 0) {
                 deleteTree(staging);
                 throw new IOException("No safe config files could be copied.");
-            }
-
-            for (String relative : relativePaths) {
-                Path absolute = GAME_DIR.resolve(relative).normalize();
-                if (Files.isRegularFile(absolute) && Files.getLastModifiedTime(absolute).toMillis()
-                    >= Instant.now().minusSeconds(30).toEpochMilli()) {
-                    // Changed files are counted from the discovery report and verified below by hash.
-                }
             }
 
             manifest.setProperty("scope", scope);
@@ -267,7 +260,7 @@ public final class BackupStore {
             manifest.setProperty("created", Instant.now().toString());
             manifest.setProperty("fileCount", Integer.toString(copied));
             manifest.setProperty("byteCount", Long.toString(totalBytes));
-            manifest.setProperty("changedFileCount", Integer.toString(changedFiles));
+            manifest.setProperty("changedFileCount", Integer.toString(verifiedChanged));
             manifest.setProperty("changedLineCount", Integer.toString(changedLines));
             manifest.setProperty("saveMethodsFound", Integer.toString(methodsFound));
             manifest.setProperty("saveMethodsInvoked", Integer.toString(methodsInvoked));
@@ -281,7 +274,6 @@ public final class BackupStore {
             Files.createDirectories(target.getParent());
             deleteTree(target);
             move(staging, target);
-            verifiedChanged = Math.min(changedFiles, copied);
             System.err.println("[Mod Manager] BACKUP VERIFIED scope=" + scope
                 + " mod=" + modId + " files=" + copied + " changed=" + verifiedChanged
                 + " bytes=" + totalBytes);
