@@ -17,7 +17,7 @@ Client-side Fabric mod for Minecraft 1.21.11.
 - The selected profile must be registered as LOCAL in sources.json and must be a valid .corz.json file containing the content.modules object.
 - If the selected profile is missing or invalid, Mod Manager chooses the newest valid remaining LOCAL profile, writes its name to active.txt, and uses that profile.
 - A newly selected profile is noticed on the next world join because the selection and registry are read fresh for each connection.
-- The load attempt is latched once per ClientWorld. It is not run every tick and is reset after disconnecting.
+- The load attempt is latched once per play-network connection. It is not run every tick, and dimension changes or respawns do not trigger another load. The latch resets after disconnecting.
 - The adapter looks for a narrowly named CorzClient load/profile API using Corz's config/profile classes. It supports methods that accept a profile name, a profile path/file, or methods explicitly named to load the active profile.
 - Mod Manager does not overwrite CorzClient's live settings JSON. Replacing that file alone would not guarantee that Corz's already-loaded in-memory module objects are updated.
 
