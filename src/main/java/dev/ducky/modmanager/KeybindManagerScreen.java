@@ -338,13 +338,14 @@ public final class KeybindManagerScreen extends Screen {
             return;
         }
         Row row = rows.get(selected);
+        String backupResult = BackupStore.restoreLatestMod(row.modId());
         if (row.binding() != null) {
             KeybindStore.restore(row.binding());
-            saveMessage = "Selected Minecraft keybind restored to its default.";
+            saveMessage = "Minecraft key restored. " + backupResult;
             clearAndInit();
             return;
         }
-        saveMessage = BackupStore.restoreLatestMod(row.modId());
+        saveMessage = backupResult;
         updateMessage();
     }
 
