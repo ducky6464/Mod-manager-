@@ -46,3 +46,14 @@ The automated build must pass before the JAR is treated as ready. A successful b
 - CI runs a clean build, verifies the exact v7 JAR filename and embedded fabric.mod.json name, and uploads only that JAR.
 
 - Installed-mod row construction is independent from keybind reflection, so a keybind scan failure cannot blank the mod list.
+
+
+## Version 8 custom client GUI shortcut remapping
+
+- Select a mod/client row, including rows without a Minecraft-registered keybind.
+- Click **Set Client GUI Key**.
+- Press the client's current GUI shortcut, then press the replacement key.
+- The mapping is saved in `config/mod-manager-client-keys.properties`.
+- While in-game with no screen open, the manager forwards the replacement key as the original Minecraft keyboard event.
+
+This compatibility path supports clients whose GUI handlers listen to Minecraft keyboard events. Clients that poll GLFW directly, use native input hooks, or bypass Minecraft's keyboard event path require a client-specific adapter and are not guaranteed to work with this generic remapper.
