@@ -255,7 +255,7 @@ public final class KeybindManagerScreen extends Screen {
         }
         updateMessage();
         if (infoWidget != null) infoWidget.setMessage(Text.literal(
-            MOD MANAGER v8 | Fabric mods:  + KeybindScanner.getLastModCount()
+            "MOD MANAGER v8 | Fabric mods: " + KeybindScanner.getLastModCount()
                 + " | keybinds: " + KeybindScanner.getLastKeybindCount()));
     }
 
